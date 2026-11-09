@@ -1,0 +1,7 @@
+.DS_Store
+**/build/
+_build*/
+*.log
+hosttest/out/
+hosttest/cobra_host
+hosttest/*.o

@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 fruit-bat
+include_directories(${CMAKE_CURRENT_LIST_DIR})
+
+set(picomputer_common_defines
+  # Tell FATFS we want to find files
+  FF_USE_FIND=1  
+  # Configure the SPI sd card to use PIO1
+  SDCARD_PIO=pio1
+  SDCARD_PIO_SM=1  
+  SDCARD_PIN_SPI0_CS=13
+  SDCARD_PIN_SPI0_SCK=10
+  SDCARD_PIN_SPI0_MOSI=11
+  SDCARD_PIN_SPI0_MISO=12
+
+  PICO_CORE1_STACK_SIZE=0x800
+)
+
+set(picomputer_common_src
+	${zxspectrum_picomputer_kbd_src}
+)
+
+add_subdirectory(picomputer_vga)
+add_subdirectory(picomputer_vga_zx)
+add_subdirectory(picomputer_st7789)

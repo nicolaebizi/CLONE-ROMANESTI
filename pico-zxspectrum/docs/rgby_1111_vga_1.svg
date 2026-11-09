@@ -1,0 +1,748 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Generator: Circuit Diagram, cdlibrary.dll 4.0.0.0 -->
+
+<svg
+   version="1.1"
+   width="640"
+   height="480"
+   id="svg212"
+   sodipodi:docname="rgby_1111_vga_1.svg"
+   inkscape:version="1.2.2 (b0a8486541, 2022-12-01)"
+   inkscape:export-filename="rgby_1111_vga_1.png"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs216" />
+  <sodipodi:namedview
+     id="namedview214"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     showgrid="false"
+     inkscape:zoom="1.2227055"
+     inkscape:cx="278.4808"
+     inkscape:cy="224.91107"
+     inkscape:window-width="1920"
+     inkscape:window-height="1002"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <g
+     inkscape:groupmode="layer"
+     id="layer2"
+     inkscape:label="Background"
+     style="display:inline;fill:#ffffff"
+     sodipodi:insensitive="true">
+    <rect
+       style="fill:#ffffff"
+       id="rect1201"
+       width="641.19141"
+       height="480.4407"
+       x="-0.92967498"
+       y="-0.089453265" />
+  </g>
+  <g
+     inkscape:groupmode="layer"
+     id="layer1"
+     inkscape:label="Layer 1"
+     style="display:inline">
+    <text
+       x="200"
+       y="160"
+       style="font-size:11px;font-family:Arial;text-anchor:start"
+       dominant-baseline="middle"
+       id="text2">1N4148 x3</text>
+    <line
+       x1="400"
+       y1="440"
+       x2="400"
+       y2="442"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line4" />
+    <path
+       d="m 392,442 h 16 l -8,8 -8,-8"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="path6" />
+    <line
+       x1="400"
+       y1="330"
+       x2="400"
+       y2="440"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line8" />
+    <text
+       x="478"
+       y="420"
+       style="font-size:12px;font-family:Arial;text-anchor:start"
+       dominant-baseline="middle"
+       id="text10">VGA pin 10 (gnd)</text>
+    <line
+       x1="400"
+       y1="420"
+       x2="467"
+       y2="420"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line12" />
+    <circle
+       cx="470"
+       cy="420"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="ellipse14"
+       r="3" />
+    <text
+       x="478"
+       y="390"
+       style="font-size:12px;font-family:Arial;text-anchor:start"
+       dominant-baseline="middle"
+       id="text16">VGA pin 8 (B return)</text>
+    <line
+       x1="400"
+       y1="390"
+       x2="467"
+       y2="390"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line18" />
+    <circle
+       cx="470"
+       cy="390"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="ellipse20"
+       r="3" />
+    <text
+       x="478"
+       y="360"
+       style="font-size:12px;font-family:Arial;text-anchor:start"
+       dominant-baseline="middle"
+       id="text22">VGA pin 7 (G return)</text>
+    <line
+       x1="400"
+       y1="360"
+       x2="467"
+       y2="360"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line24" />
+    <circle
+       cx="470"
+       cy="360"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="ellipse26"
+       r="3" />
+    <text
+       x="478"
+       y="330"
+       style="font-size:12px;font-family:Arial;text-anchor:start"
+       dominant-baseline="middle"
+       id="text28">VGA pin 6 (R return)</text>
+    <line
+       x1="400"
+       y1="330"
+       x2="467"
+       y2="330"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line30" />
+    <circle
+       cx="470"
+       cy="330"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="ellipse32"
+       r="3" />
+    <text
+       x="162"
+       y="300"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:12px;font-family:Arial;-inkscape-font-specification:'Arial, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;dominant-baseline:middle;text-anchor:end"
+       dominant-baseline="middle"
+       id="text34"><tspan
+         sodipodi:role="line"
+         id="tspan1502">Pico pin 21 (GP16 CS)</tspan></text>
+    <line
+       x1="173"
+       y1="300"
+       x2="260"
+       y2="300"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line36" />
+    <circle
+       cx="170"
+       cy="300"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="ellipse38"
+       r="3" />
+    <text
+       x="478"
+       y="300"
+       style="font-size:12px;font-family:Arial;text-anchor:start"
+       dominant-baseline="middle"
+       id="text40">VGA pin 13 (hsync)</text>
+    <line
+       x1="330"
+       y1="300"
+       x2="467"
+       y2="300"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line42" />
+    <circle
+       cx="470"
+       cy="300"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="ellipse44"
+       r="3" />
+    <line
+       x1="250"
+       y1="300"
+       x2="270"
+       y2="300"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line46" />
+    <line
+       x1="310"
+       y1="300"
+       x2="330"
+       y2="300"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line48" />
+    <rect
+       x="270"
+       y="292"
+       width="40"
+       height="16"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="rect50" />
+    <text
+       x="290"
+       y="286"
+       style="font-size:11px;font-family:Arial;text-anchor:middle"
+       dominant-baseline="baseline"
+       id="text52">100 Ω</text>
+    <line
+       x1="340"
+       y1="60"
+       x2="360"
+       y2="60"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line54" />
+    <line
+       x1="340"
+       y1="140"
+       x2="360"
+       y2="140"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line56" />
+    <line
+       x1="340"
+       y1="100"
+       x2="360"
+       y2="100"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line58" />
+    <line
+       x1="330"
+       y1="260"
+       x2="370"
+       y2="260"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line60" />
+    <line
+       x1="330"
+       y1="220"
+       x2="350"
+       y2="220"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line62" />
+    <line
+       x1="370"
+       y1="60"
+       x2="370"
+       y2="260"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line64" />
+    <line
+       x1="350"
+       y1="100"
+       x2="350"
+       y2="220"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line66" />
+    <line
+       x1="330"
+       y1="140"
+       x2="330"
+       y2="180"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line68" />
+    <line
+       x1="200"
+       y1="180"
+       x2="200"
+       y2="260"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line70" />
+    <line
+       x1="250"
+       y1="260"
+       x2="200"
+       y2="260"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line72" />
+    <path
+       d="m 218,260 m 0,-8 v 16 m 0,-8 15,8 v -16 l -15,8"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="path74" />
+    <line
+       x1="250"
+       y1="260"
+       x2="270"
+       y2="260"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line76" />
+    <line
+       x1="310"
+       y1="260"
+       x2="330"
+       y2="260"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line78" />
+    <rect
+       x="270"
+       y="252"
+       width="40"
+       height="16"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="rect80" />
+    <text
+       x="290"
+       y="246"
+       style="font-size:11px;font-family:Arial;text-anchor:middle"
+       dominant-baseline="baseline"
+       id="text82">330 Ω</text>
+    <text
+       x="162"
+       y="220.66132"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:12px;font-family:Arial;-inkscape-font-specification:'Arial, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;dominant-baseline:middle;text-anchor:end"
+       dominant-baseline="middle"
+       id="text84"><tspan
+         sodipodi:role="line"
+         id="tspan1500">Pico pin 20 (GP15 Y0)</tspan></text>
+    <line
+       x1="173"
+       y1="220"
+       x2="200"
+       y2="220"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line86" />
+    <circle
+       cx="170"
+       cy="220"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="ellipse88"
+       r="3" />
+    <line
+       x1="250"
+       y1="220"
+       x2="200"
+       y2="220"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line90" />
+    <path
+       d="m 218,220 m 0,-8 v 16 m 0,-8 15,8 v -16 l -15,8"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="path92" />
+    <line
+       x1="250"
+       y1="220"
+       x2="270"
+       y2="220"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line94" />
+    <line
+       x1="310"
+       y1="220"
+       x2="330"
+       y2="220"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line96" />
+    <rect
+       x="270"
+       y="212"
+       width="40"
+       height="16"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="rect98" />
+    <text
+       x="290"
+       y="206"
+       style="font-size:11px;font-family:Arial;text-anchor:middle"
+       dominant-baseline="baseline"
+       id="text100">330 Ω</text>
+    <line
+       x1="250"
+       y1="180"
+       x2="200"
+       y2="180"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line102" />
+    <path
+       d="m 218,180 m 0,-8 v 16 m 0,-8 15,8 v -16 l -15,8"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="path104" />
+    <text
+       x="478"
+       y="140"
+       style="font-size:12px;font-family:Arial;text-anchor:start"
+       dominant-baseline="middle"
+       id="text106">VGA pin 3 (B)</text>
+    <line
+       x1="460"
+       y1="140"
+       x2="467"
+       y2="140"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line108" />
+    <circle
+       cx="470"
+       cy="140"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="ellipse110"
+       r="3" />
+    <line
+       x1="360"
+       y1="140"
+       x2="390"
+       y2="140"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line112" />
+    <line
+       x1="430"
+       y1="140"
+       x2="460"
+       y2="140"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line114" />
+    <rect
+       x="390"
+       y="132"
+       width="40"
+       height="16"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="rect116" />
+    <text
+       x="410"
+       y="126"
+       style="font-size:11px;font-family:Arial;text-anchor:middle"
+       dominant-baseline="baseline"
+       id="text118">100 Ω</text>
+    <text
+       x="162"
+       y="140"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:12px;font-family:Arial;-inkscape-font-specification:'Arial, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;dominant-baseline:middle;text-anchor:end"
+       dominant-baseline="middle"
+       id="text120"><tspan
+         sodipodi:role="line"
+         id="tspan1498">Pico pin 16 (GP12 B0)</tspan></text>
+    <line
+       x1="173"
+       y1="140"
+       x2="240"
+       y2="140"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line122" />
+    <circle
+       cx="170"
+       cy="140"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="ellipse124"
+       r="3" />
+    <line
+       x1="240"
+       y1="140"
+       x2="270"
+       y2="140"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line126" />
+    <line
+       x1="310"
+       y1="140"
+       x2="340"
+       y2="140"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line128" />
+    <rect
+       x="270"
+       y="132"
+       width="40"
+       height="16"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="rect130" />
+    <text
+       x="290"
+       y="126"
+       style="font-size:11px;font-family:Arial;text-anchor:middle"
+       dominant-baseline="baseline"
+       id="text132">330 Ω</text>
+    <text
+       x="478"
+       y="100"
+       style="font-size:12px;font-family:Arial;text-anchor:start"
+       dominant-baseline="middle"
+       id="text134">VGA pin 2 (G)</text>
+    <line
+       x1="460"
+       y1="100"
+       x2="467"
+       y2="100"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line136" />
+    <circle
+       cx="470"
+       cy="100"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="ellipse138"
+       r="3" />
+    <line
+       x1="360"
+       y1="100"
+       x2="390"
+       y2="100"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line140" />
+    <line
+       x1="430"
+       y1="100"
+       x2="460"
+       y2="100"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line142" />
+    <rect
+       x="390"
+       y="92"
+       width="40"
+       height="16"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="rect144" />
+    <text
+       x="410"
+       y="86"
+       style="font-size:11px;font-family:Arial;text-anchor:middle"
+       dominant-baseline="baseline"
+       id="text146">100 Ω</text>
+    <text
+       x="162"
+       y="100"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:12px;font-family:Arial;-inkscape-font-specification:'Arial, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;dominant-baseline:middle;text-anchor:end"
+       dominant-baseline="middle"
+       id="text148"><tspan
+         sodipodi:role="line"
+         id="tspan1496">Pico pin 17 ( GP13 G0)</tspan></text>
+    <line
+       x1="173"
+       y1="100"
+       x2="240"
+       y2="100"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line150" />
+    <circle
+       cx="170"
+       cy="100"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="ellipse152"
+       r="3" />
+    <line
+       x1="240"
+       y1="100"
+       x2="270"
+       y2="100"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line154" />
+    <line
+       x1="310"
+       y1="100"
+       x2="340"
+       y2="100"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line156" />
+    <rect
+       x="270"
+       y="92"
+       width="40"
+       height="16"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="rect158" />
+    <text
+       x="290"
+       y="86"
+       style="font-size:11px;font-family:Arial;text-anchor:middle"
+       dominant-baseline="baseline"
+       id="text160">330 Ω</text>
+    <line
+       x1="250"
+       y1="180"
+       x2="270"
+       y2="180"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line162" />
+    <line
+       x1="310"
+       y1="180"
+       x2="330"
+       y2="180"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line164" />
+    <rect
+       x="270"
+       y="172"
+       width="40"
+       height="16"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="rect166" />
+    <text
+       x="290"
+       y="166"
+       style="font-size:11px;font-family:Arial;text-anchor:middle"
+       dominant-baseline="baseline"
+       id="text168">330 Ω</text>
+    <text
+       x="478"
+       y="60"
+       style="font-size:12px;font-family:Arial;text-anchor:start"
+       dominant-baseline="middle"
+       id="text170">VGA pin 1 (R)</text>
+    <line
+       x1="460"
+       y1="60"
+       x2="467"
+       y2="60"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line172" />
+    <circle
+       cx="470"
+       cy="60"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="ellipse174"
+       r="3" />
+    <line
+       x1="360"
+       y1="60"
+       x2="390"
+       y2="60"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line176" />
+    <line
+       x1="430"
+       y1="60"
+       x2="460"
+       y2="60"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line178" />
+    <rect
+       x="390"
+       y="52"
+       width="40"
+       height="16"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="rect180" />
+    <text
+       x="410"
+       y="46"
+       style="font-size:11px;font-family:Arial;text-anchor:middle"
+       dominant-baseline="baseline"
+       id="text182">100 Ω</text>
+    <text
+       x="162"
+       y="60"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:12px;font-family:Arial;-inkscape-font-specification:'Arial, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;dominant-baseline:middle;text-anchor:end"
+       dominant-baseline="middle"
+       id="text184"><tspan
+         sodipodi:role="line"
+         id="tspan1494">Pico pin 19 (GP14 R0)</tspan></text>
+    <line
+       x1="173"
+       y1="60"
+       x2="240"
+       y2="60"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line186" />
+    <circle
+       cx="170"
+       cy="60"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="ellipse188"
+       r="3" />
+    <line
+       x1="240"
+       y1="60"
+       x2="270"
+       y2="60"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line190" />
+    <line
+       x1="310"
+       y1="60"
+       x2="340"
+       y2="60"
+       style="stroke:#000000;stroke-width:2;stroke-linecap:square"
+       id="line192" />
+    <rect
+       x="270"
+       y="52"
+       width="40"
+       height="16"
+       style="fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:2"
+       id="rect194" />
+    <text
+       x="290"
+       y="46"
+       style="font-size:11px;font-family:Arial;text-anchor:middle"
+       dominant-baseline="baseline"
+       id="text196">330 Ω</text>
+    <circle
+       cx="400"
+       cy="360"
+       style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:2"
+       id="ellipse198"
+       r="2" />
+    <circle
+       cx="400"
+       cy="390"
+       style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:2"
+       id="ellipse200"
+       r="2" />
+    <circle
+       cx="400"
+       cy="420"
+       style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:2"
+       id="ellipse202"
+       r="2" />
+    <circle
+       cx="350"
+       cy="100"
+       style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:2"
+       id="ellipse204"
+       r="2" />
+    <circle
+       cx="370"
+       cy="60"
+       style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:2"
+       id="ellipse206"
+       r="2" />
+    <circle
+       cx="330"
+       cy="140"
+       style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:2"
+       id="ellipse208"
+       r="2" />
+    <circle
+       cx="200"
+       cy="220"
+       style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:2"
+       id="ellipse210"
+       r="2" />
+  </g>
+</svg>

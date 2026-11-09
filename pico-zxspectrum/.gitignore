@@ -1,0 +1,6 @@
+**/*.bak
+jsw.h
+ljm.h
+build*/**
+temp*/**
+.vscode

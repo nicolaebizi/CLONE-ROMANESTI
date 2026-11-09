@@ -1,0 +1,415 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 fruit-bat
+
+include_directories(${CMAKE_CURRENT_LIST_DIR})
+
+########################################################################
+# Optional Amstrad +3B ROM set used when building the +3 enabled target.
+# The ROMs stay in the repository asset directory; CMake emits the C
+# header only into the build tree. The directory comes either from an
+# explicit -DZX_PLUS3_ROM_DIR=... or, automatically, when the board is
+# pico_plus3. Every other board (pico, pico2, ...) builds exactly as
+# before and never sees plus3_roms.h.
+########################################################################
+option(ZX_PLUS3_ROMS "Embed the +3B ROM set on any board" OFF)
+set(ZX_PLUS3_ROM_DIR "" CACHE PATH "Directory with plus3b_0.rom through plus3b_3.rom")
+if ((NOT ZX_PLUS3_ROM_DIR) AND ((ZX_PLUS3_ROMS) OR (${PICO_BOARD} STREQUAL "pico_plus3")))
+  set(ZX_PLUS3_ROM_DIR "${CMAKE_CURRENT_LIST_DIR}/../roms/plus3b")
+endif()
+if (ZX_PLUS3_ROM_DIR)
+  set(ZX_PLUS3_ROM_HEADER "${CMAKE_CURRENT_BINARY_DIR}/plus3_roms.h")
+  file(WRITE "${ZX_PLUS3_ROM_HEADER}" "#pragma once\n#include <stdint.h>\n")
+  foreach(page RANGE 0 3)
+    set(rom_file "${ZX_PLUS3_ROM_DIR}/plus3b_${page}.rom")
+    if (NOT EXISTS "${rom_file}")
+      message(FATAL_ERROR "Missing +3 ROM page: ${rom_file}")
+    endif()
+    file(SIZE "${rom_file}" rom_size)
+    if (NOT rom_size EQUAL 16384)
+      message(FATAL_ERROR "+3 ROM page ${rom_file} must be exactly 16 KiB")
+    endif()
+    file(READ "${rom_file}" rom_hex HEX)
+    string(REGEX REPLACE "([0-9A-Fa-f][0-9A-Fa-f])" "0x\\1," rom_bytes "${rom_hex}")
+    file(APPEND "${ZX_PLUS3_ROM_HEADER}"
+      "static const uint8_t zx_plus3_rom_${page}[0x4000] = {${rom_bytes}};\n")
+  endforeach()
+  # Make the generated header and the enable flag visible to every target
+  # built in this directory and its subdirectories (vga, hdmi, picomputer,
+  # picovga) - they all compile ZxSpectrum.cpp.
+  include_directories("${CMAKE_CURRENT_BINARY_DIR}")
+  add_compile_definitions(ZX_PLUS3_ROM_AVAILABLE=1)
+endif()
+
+set(zxspectrum_st7789_lcd_src
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSt7789LcdRenderLoop.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/picomputer/picomputer_st7789/pzx_prepare_rgb444_scanline.cpp # TODO Move this file
+  ${CMAKE_CURRENT_LIST_DIR}/picomputer/picomputer_st7789/st7789_lcd.pio # TODO Move this file
+  ${CMAKE_CURRENT_LIST_DIR}/picomputer/picomputer_st7789/st7789_lcd.cpp # TODO Move this file
+)
+
+set(zxspectrum_common_src
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumMouse.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumHidMouse.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumSettings.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumFlashSettings.cpp # Needed for flash settings (not currently working)
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumFileSettings.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumAudio.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumAudioVol.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumAudioPioPwm.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumAudioPwm.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumAudioNull.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumAudioI2s.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumAudioHdmi.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumAudioDriver.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumVideoDriver.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumKiosk.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumFatSpiKiosk.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumKeyboard.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumHidKeyboard.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumJoystick.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumHidJoystick.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumDualJoystick.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumNespadJoystick.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrum.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumHcFdc.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/CobraFloppy.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/QuickSave.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProc.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcTone.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcStdHeader.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcStdByte.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcStdByteStream.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcChain.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcTzxBlock.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcTzxTurbo.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcTap.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcTzx.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcTzxHeader.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcTzxGlue.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcTzxIndex.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcPauseMillis.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcTzxPureTone.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcPulseStream.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcTzxPulseSequence.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcTzxPureData.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcBitStream.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcTzxDirectRecording.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcCallStream.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcTzxGenData.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcTzxSelect.cpp 
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcSymdefs.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcRleSym.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcSymbol.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PulseProcSymbolData.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumFile.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumFileLoop.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumAy.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumMenu.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/BootSwap.cpp # Boot manager swap gate (RP2350 active, RP2040 stub)
+  ${CMAKE_CURRENT_LIST_DIR}/CobraDiskFile.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumFatSpiExists.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/PicoOnScreenKeyboard.cpp
+)
+
+set(zxspectrum_rgb332_src
+  ${CMAKE_CURRENT_LIST_DIR}/ZxRgb332RenderLoop.cpp
+)
+
+set(zxspectrum_rgb_src
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumPrepareRgbScanline.cpp
+)
+
+set(zxspectrum_scanvideo_src
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumPrepareScanvideoScanline.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxScanlineVgaRenderLoop.cpp
+)
+
+set(zxspectrum_dvi_src
+  ${CMAKE_CURRENT_LIST_DIR}/tmds_encode_zxspectrum.S
+  ${CMAKE_CURRENT_LIST_DIR}/tmds_encode_zxspectrum.h
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumPrepareDviScanline.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxDviRenderLoop.cpp
+)
+
+set(zxspectrum_kbd_src
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumKeyMatrix.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumMatrixJoystick.cpp
+)
+
+set(zxspectrum_kbd2_src
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumKeyMatrix2.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumMatrixJoystick.cpp
+)
+
+# Keyboard source for the Picomputer ZX and Max (possibly others)
+set(zxspectrum_picomputer_kbd_src
+	${CMAKE_CURRENT_LIST_DIR}/picomputer/pzx_keyscan.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumKeyMatrix.h
+	${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumMatrixJoystick.cpp
+)
+
+set(zxspectrum_common_libs
+  pico_stdlib
+  pico_multicore
+  pico_util
+  pico_emu_utils
+  pico_hid_host
+  pico_nespad
+  sdcard
+  fatfs
+  hardware_dma
+  hardware_flash # Needed for flash settings (not currently working)
+  hardware_sync  # Needed for flash settings (not currently working)
+  hardware_pio
+  hardware_pwm
+  hardware_adc  
+  Zeta
+  Z80
+)
+
+set(zxspectrum_audio_i2s_pio
+  ${CMAKE_CURRENT_LIST_DIR}/audio_i2s.pio
+)
+
+set(zxspectrum_ear_in_pio
+  ${CMAKE_CURRENT_LIST_DIR}/zx_ear_in.pio
+)
+
+set(zxspectrum_pwm_pio
+  ${CMAKE_CURRENT_LIST_DIR}/pwm.pio
+)
+
+set(zxspectrum_st7789_pio 
+  ${CMAKE_CURRENT_LIST_DIR}/picomputer/picomputer_st7789/st7789_lcd.pio # TODO Move this file
+)
+
+set(zxspectrum_pio_all
+  ${zxspectrum_audio_i2s_pio}
+  ${zxspectrum_ear_in_pio}
+  ${zxspectrum_pwm_pio}
+  ${zxspectrum_st7789_pio}
+)
+
+function(zxspectrum_generate_pio_headers TARGET)
+  foreach(pio
+    ${zxspectrum_pio_all}
+    )
+    pico_generate_pio_header(${TARGET}
+      ${pio}
+    )
+  endforeach()
+endfunction()
+
+add_subdirectory(hdmi)
+add_subdirectory(picomputer)
+add_subdirectory(vga)
+add_subdirectory(picovga)
+
+add_custom_target (relevant)
+
+########################################################################
+# MURMULATOR (RP2040 or RP2350)
+########################################################################
+add_custom_target(ZX-MURMULATOR)
+add_dependencies(ZX-MURMULATOR
+  ZX-MURMULATOR_HDMI_PWM_AUDIO_640x480x60Hz
+  ZX-MURMULATOR_HDMI_PWM_AUDIO_720x576x50Hz
+  ZX-MURMULATOR_HDMI_HDMI_AUDIO_640x480x60Hz
+  ZX-MURMULATOR_HDMI_HDMI_AUDIO_720x576x50Hz
+  ZX-MURMULATOR_HDMI_I2S_AUDIO_640x480x60Hz
+  ZX-MURMULATOR_HDMI_I2S_AUDIO_720x576x50Hz
+  ZX-MURMULATOR_VGA_PWM_AUDIO_640x480x60Hz
+  ZX-MURMULATOR_VGA_PWM_AUDIO_720x576x50Hz
+  ZX-MURMULATOR_VGA_I2S_AUDIO_640x480x60Hz
+  ZX-MURMULATOR_VGA_I2S_AUDIO_720x576x50Hz
+)
+if ((${PICO_BOARD} STREQUAL "pico") OR (${PICO_BOARD} STREQUAL "pico2"))
+  message("Relevant target: ZX-MURMULATOR")
+  add_dependencies(relevant ZX-MURMULATOR)
+endif()
+
+########################################################################
+# MURMULATOR2 (RP2040 or RP2350)
+########################################################################
+add_custom_target(ZX-MURMULATOR2)
+add_dependencies(ZX-MURMULATOR2
+  ZX-MURMULATOR2_HDMI_PWM_AUDIO_640x480x60Hz
+  ZX-MURMULATOR2_HDMI_PWM_AUDIO_720x576x50Hz
+  ZX-MURMULATOR2_HDMI_HDMI_AUDIO_640x480x60Hz
+  ZX-MURMULATOR2_HDMI_HDMI_AUDIO_720x576x50Hz
+  ZX-MURMULATOR2_HDMI_I2S_AUDIO_640x480x60Hz
+  ZX-MURMULATOR2_HDMI_I2S_AUDIO_720x576x50Hz
+  ZX-MURMULATOR2_VGA_PWM_AUDIO_640x480x60Hz
+  ZX-MURMULATOR2_VGA_PWM_AUDIO_720x576x50Hz
+  ZX-MURMULATOR2_VGA_I2S_AUDIO_640x480x60Hz
+  ZX-MURMULATOR2_VGA_I2S_AUDIO_720x576x50Hz
+)
+if ((${PICO_BOARD} STREQUAL "pico") OR (${PICO_BOARD} STREQUAL "pico2"))
+  message("Relevant target: ZX-MURMULATOR2")
+  add_dependencies(relevant ZX-MURMULATOR2)
+endif()
+
+########################################################################
+# Breadboard (RP2040 or RP2350)
+########################################################################
+add_custom_target (ZxSpectrumBreadboard)
+add_dependencies (ZxSpectrumBreadboard
+  ZxSpectrumBreadboardHdmiAudio
+  ZxSpectrumBreadboardHdmiAudio720x540x50Hz
+  ZxSpectrumBreadboardHdmiAudio720x576x50Hz
+  ZxSpectrumBreadboardHdmi1PinAudio
+  ZxSpectrumBreadboardHdmi2PinAudio
+  ZxSpectrumBreadboardHdmi4PinAudio
+  ZxSpectrumBreadboardHdmiKbd1PinAudio
+  ZxSpectrum4PinAudioVga1111Ps2_640x480x60Hz
+  ZxSpectrum4PinAudioVga1111Ps2_720x576x50Hz
+  ZxSpectrum4PinAudioVga222Ps2_640x480x60Hz
+  ZxSpectrum4PinAudioVga222Ps2_720x576x50Hz
+  ZxSpectrumI2SAudioVga1111Ps2_CVBSx50Hz
+)
+if ((${PICO_BOARD} STREQUAL "pico") OR (${PICO_BOARD} STREQUAL "pico2"))
+  message("Relevant target: ZxSpectrumBreadboard")
+  add_dependencies(relevant ZxSpectrumBreadboard)
+endif()
+
+########################################################################
+# Pimoroni pico dv (RP2040 or RP2350)
+########################################################################
+add_custom_target (ZxSpectrumPicoDv)
+add_dependencies (ZxSpectrumPicoDv
+  ZxSpectrumPicoDv_I2SAudio_640x480x60Hz
+  ZxSpectrumPicoDv_HdmiAudio_640x480x60Hz
+  ZxSpectrumPicoDv_I2SAudio_720x576x50Hz
+  ZxSpectrumPicoDv_HdmiAudio_720x576x50Hz
+)
+if ((${PICO_BOARD} STREQUAL "pico") OR (${PICO_BOARD} STREQUAL "pico2"))
+  message("Relevant target: ZxSpectrumPicoDv")
+  add_dependencies(relevant ZxSpectrumPicoDv)
+endif()
+
+########################################################################
+# Adafruit feather (RP2040 only)
+# cmake -DPICO_COPY_TO_RAM=0 -DPICO_BOARD=adafruit_feather_rp2040 ..
+########################################################################
+add_custom_target (ZxSpectrumAdafruitFeather)
+add_dependencies (ZxSpectrumAdafruitFeather
+  ZxSpectrumAdafruitFeatherHdmi
+)
+if ((${PICO_PLATFORM} STREQUAL "rp2040") AND (${PICO_BOARD} STREQUAL "adafruit_feather_rp2040"))
+  message("Relevant target: ZxSpectrumAdafruitFeather")
+  add_dependencies(relevant ZxSpectrumAdafruitFeather)
+endif()
+
+########################################################################
+# Waveshare - RP2040 - PicoZero (RP2040 only)
+########################################################################
+add_custom_target (ZxSpectrumPiZero)
+add_dependencies (ZxSpectrumPiZero
+  ZxSpectrumPiZero_640x480x60Hz
+  ZxSpectrumPiZero_720x576x50Hz
+)
+if (${PICO_BOARD} STREQUAL "pico")
+  message("Relevant target: ZxSpectrumPiZero")
+  add_dependencies(relevant ZxSpectrumPiZero)
+endif()
+
+########################################################################
+# Waveshare - RP2350 - PiZero (RP2350 only)
+########################################################################
+add_custom_target (ZxSpectrumRP2350PiZero)
+add_dependencies (ZxSpectrumRP2350PiZero
+  ZxSpectrumRP2350PiZero_640x480x60Hz
+  ZxSpectrumRP2350PiZero_720x576x50Hz
+)
+if (${PICO_BOARD} STREQUAL "waveshare_rp2350_pizero")
+  message("Relevant target: ZxSpectrumRP2350PiZero")
+  add_dependencies(relevant ZxSpectrumRP2350PiZero)
+endif()
+
+########################################################################
+# Olimex RP2040-PICO-PC (RP2040 or RP2350)
+########################################################################
+add_custom_target (ZxSpectrumOlimexPc)
+add_dependencies (ZxSpectrumOlimexPc
+  ZxSpectrumOlimexPcHdmiAudio640x480x60Hz
+  ZxSpectrumOlimexPcHdmiAudio720x576x50Hz
+)
+if ((${PICO_BOARD} STREQUAL "pico") OR (${PICO_BOARD} STREQUAL "pico2"))
+  message("Relevant target: ZxSpectrumOlimexPc")
+  add_dependencies(relevant ZxSpectrumOlimexPc)
+endif()
+
+########################################################################
+# Pimoroni Pico VGA Demo Base (RP2040 or RP2350)
+# cmake -DPICO_COPY_TO_RAM=0 -DPICO_PLATFORM=rp2040 -DPICO_BOARD=vgaboard ../..
+# cmake -DPICO_COPY_TO_RAM=0 -DPICO_PLATFORM=rp2350 -DPICO_BOARD=vgaboard ../..
+########################################################################
+add_custom_target (ZxSpectrumPicoVga)
+add_dependencies (ZxSpectrumPicoVga
+  ZxSpectrumPicoVga_640x480x60Hz
+  ZxSpectrumPicoVga_720x576x50Hz
+)
+if (${PICO_BOARD} STREQUAL "vgaboard")
+  message("Relevant target: ZxSpectrumPicoVga")
+  add_dependencies(relevant ZxSpectrumPicoVga)
+endif()
+
+########################################################################
+# Pico Mite VGA (RP2040 or RP2350)
+########################################################################
+add_custom_target (ZxSpectrumPicoMite)
+add_dependencies (ZxSpectrumPicoMite
+  ZxSpectrumPicoMiteVGA_640x480x60Hz
+  ZxSpectrumPicoMiteVGA_720x576x50Hz
+)
+if ((${PICO_BOARD} STREQUAL "pico") OR (${PICO_BOARD} STREQUAL "pico2"))
+  message("Relevant target: ZxSpectrumPicoMite")
+  add_dependencies(relevant ZxSpectrumPicoMite)
+endif()
+
+########################################################################
+# Picomputer (RP2040 Only)
+########################################################################
+add_custom_target (ZxSpectrumPicomputer)
+add_dependencies (ZxSpectrumPicomputer
+  ZxSpectrumPicomputerZxLcd_640x480x60Hz
+  ZxSpectrumPicomputerZxLcd_720x576x50Hz
+  ZxSpectrumPicomputerZxInverseLcd_640x480x60Hz
+  ZxSpectrumPicomputerZxInverseLcd_720x576x50Hz
+  ZxSpectrumPicomputerZxILI9341Lcd_720x576x50Hz
+  ZxSpectrumPicomputerZxILI9341Lcd_640x480x60Hz
+  ZxSpectrumPicomputerVga_640x480x60Hz
+  ZxSpectrumPicomputerVga_720x576x50Hz
+  ZxSpectrumPicomputerVga1111Zx_640x480x60Hz
+  ZxSpectrumPicomputerVga222Zx_640x480x60Hz
+  ZxSpectrumPicomputerVgaAuk_640x480x60Hz
+  ZxSpectrumPicomputerVgaAukBob_640x480x60Hz
+  ZxSpectrumPicomputerVga1111Zx_720x576x50Hz
+  ZxSpectrumPicomputerVga222Zx_720x576x50Hz
+  ZxSpectrumPicomputerVgaAuk_720x576x50Hz
+  ZxSpectrumPicomputerVgaAukBob_720x576x50Hz
+  ZxSpectrumPicomputerMax
+  ZxSpectrumPicomputerZX
+  ZxSpectrumBobZero_640x480x60Hz
+  ZxSpectrumBobZero_720x576x50Hz
+  # this one is not like the others... made for emilen72 
+  ZxSpectrumPicomputerVga1111AukBob_720x576x50Hz  
+)
+if (${PICO_BOARD} STREQUAL "pico")
+  message("Relevant target: ZxSpectrumPicomputer")
+  add_dependencies(relevant ZxSpectrumPicomputer)
+endif()
+########################################################################
+# Picomputer 2 II (RP2350 Only)
+########################################################################
+add_custom_target (ZxSpectrumPicomputer2)
+add_dependencies (ZxSpectrumPicomputer2
+  ZxSpectrumPicomputerZx2Lcd_640x480x60Hz
+  ZxSpectrumPicomputerZx2Lcd_720x576x50Hz
+)
+if (${PICO_BOARD} STREQUAL "pico2")
+  message("Relevant target: ZxSpectrumPicomputer2")
+  add_dependencies(relevant ZxSpectrumPicomputer2)
+endif()
+
+
