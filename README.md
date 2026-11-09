@@ -44,6 +44,7 @@ SD:/zxspectrum/
     ├── cobra1/       CoBra: .img 720K, .dsk (DSK/EDSK)
     ├── TIMS PLUS/    TIM-S Plus (numele are spațiu)
     └── CUBZ/         CUB-Z: .dsk (EDSK) / .img
+    └── plus3/        +3
 ```
 
 Meniul **D (HC2K,+3,TIMS PLUS,CUBZ)** montează dischetele. În listele de fișiere, tasta **5** reîncarcă
