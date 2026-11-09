@@ -51,6 +51,7 @@ SD:/zxspectrum/
     ├── cobra1/          imagini CoBra: .img (720K), .dsk (DSK/EDSK)
     ├── TIMS PLUS/       imagini TIM-S Plus (de ex. TIMSSYS.DSK). Numele are spațiu.
     └── CUBZ/            imagini CUB-Z: .dsk (EDSK) / .img (de ex. CUBZ_CPM.dsk)
+    └── plus3
 ```
 
 Atenție: folderul este **`disks`**, la plural.
