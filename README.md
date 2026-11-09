@@ -14,7 +14,7 @@ pentru plăcile Murmulator 1 și Murmulator 2.
 | 4 | HC-2000 (ICE Felix) | i8272, CP/M, Interface 1 |
 | 5 | CoBra 1 (Brașov) | placa de bază v0.2 rev 3.17e, interfață floppy v1.2 (Z80-CTC + 8272A), 80K / 80 caractere, Unified Boot + SYSTEM ROM 64K, CP/M, DEVIL |
 | 6 | ZX Spectrum +3 | doar în build-urile cu ROM-uri +3 |
-| 7 | TIM-S Plus | doar pe RP2350 (Pico 2 datorita memoriei mici la rp240!): boot EPROM original, disc sistem, CP/M 2.2 |
+| 7 | TIM-S Plus | doar pe RP2350 ( datorita memoriei mici la pico1!): boot EPROM original, disc sistem, CP/M 2.2 |
 | 8 | CUB-Z (ICE Felix) | monitor v1.4, 64K + 16K VRAM, i8272 cu DMA 8257, ecran 512×256, CP/M 2.2 |
 
 ## Firmware gata compilat (`firmware/`)
