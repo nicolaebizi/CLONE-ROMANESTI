@@ -97,3 +97,4 @@ make -j8 ZX-MURMULATOR_VGA_I2S_AUDIO_640x480x60Hz ZX-MURMULATOR2_VGA_I2S_AUDIO_6
 - Bogdan Marcu @bmc2026 CUBZ SI TIMS PLUS -> DISK TIMS PLUS : bmc.net2000@gmail.com
 - ROM-urile și imaginile de dischetă incluse aparțin deținătorilor lor de drepturi și sunt incluse doar
 pentru păstrarea istoriei acestor calculatoare.
+- Si nu in ultimul rand CLAUDE, SI OPENCODE CU PINGUINII MEI 4 LA NUMAR !!!
