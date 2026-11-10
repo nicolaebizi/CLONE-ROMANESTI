@@ -90,6 +90,7 @@ make -j8 ZX-MURMULATOR_VGA_I2S_AUDIO_640x480x60Hz ZX-MURMULATOR2_VGA_I2S_AUDIO_6
 
 - [fruit-bat/pico-zxspectrum](https://github.com/fruit-bat/pico-zxspectrum): emulatorul de bază (MIT)
 - [redcode/Z80](https://github.com/redcode/Z80): nucleul Z80
+- Sorin CISMAS WWW.COBRASOV.ORG -> TURBO SPECTRUM
 - CoBra: scheme, ROM-uri și documentație de pe [cobrasov.com](http://www.cobrasov.com) (ElectroNNix)
 - TIM-S Plus: *TIM-S Plus – șapte calculatoare într-unul singur* (1990, Pănescu, Dumitru) și dump-ul EPROM-ului original
 - CUB-Z: *Manual tehnic CUB-Z* (1989, ICE Felix); reconstrucția Fuse „BMC2026” pentru TIM-S Plus și CUB-Z
