@@ -94,6 +94,6 @@ make -j8 ZX-MURMULATOR_VGA_I2S_AUDIO_640x480x60Hz ZX-MURMULATOR2_VGA_I2S_AUDIO_6
 - CoBra: scheme, ROM-uri și documentație de pe [cobrasov.com](http://www.cobrasov.com) (ElectroNNix)
 - TIM-S Plus: *TIM-S Plus – șapte calculatoare într-unul singur* (1990, Pănescu, Dumitru) și dump-ul EPROM-ului original
 - CUB-Z: *Manual tehnic CUB-Z* (1989, ICE Felix); reconstrucția Fuse „BMC2026” pentru TIM-S Plus și CUB-Z
-- Bogdan Marcu @bmc2026 CUBZ SI TIMS PLUS
+- Bogdan Marcu @bmc2026 CUBZ SI TIMS PLUS -> DISK TIMS PLUS : bmc.net2000@gmail.com
 - ROM-urile și imaginile de dischetă incluse aparțin deținătorilor lor de drepturi și sunt incluse doar
 pentru păstrarea istoriei acestor calculatoare.
