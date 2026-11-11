@@ -88,6 +88,67 @@ ZxSpectrumHidKey KEYS[] = {
   { HID_KEY_ARROW_RIGHT, 2, { {0, BIT0}, {4, BIT2} }}
 };
 
+// CoBra 1 keyboard (COBRA-KB v.1.0): the K5 column is read on data bit 5
+// (CTRL on KA8 ... F4 on KA15) and the composite keys drive CS plus a key.
+#define BIT5  0x20
+static const ZxSpectrumHidKey COBRA_KEYS[] = {
+  { HID_KEY_ESCAPE,       1, { {3, BIT5} }},             // ESC
+  { HID_KEY_KEYPAD_ENTER, 1, { {2, BIT5} }},             // LF
+  { HID_KEY_SCROLL_LOCK,  1, { {1, BIT5} }},             // NO SCR
+  { HID_KEY_F5,           1, { {4, BIT5} }},             // F1
+  { HID_KEY_F6,           1, { {5, BIT5} }},             // F2
+  { HID_KEY_F7,           1, { {6, BIT5} }},             // F3
+  { HID_KEY_F8,           1, { {7, BIT5} }},             // F4
+  { HID_KEY_CAPS_LOCK,    2, { {0, BIT0}, {3, BIT1} }},  // CS LK = CS + 2
+  { HID_KEY_HOME,         2, { {0, BIT0}, {4, BIT1} }},  // GRAPH = CS + 9
+  { HID_KEY_PAGE_UP,      2, { {0, BIT0}, {3, BIT0} }},  // PG ED = CS + 1
+  { HID_KEY_INSERT,       2, { {0, BIT0}, {7, BIT1} }},  // NEW M = CS + SS
+  { HID_KEY_DELETE,       2, { {0, BIT0}, {4, BIT0} }},  // DEL = CS + 0
+};
+
+// CUB-Z: the VDT-52S keyboard sends ASCII codes serially, so the PC keys are
+// translated to ASCII (US layout) instead of a Spectrum key matrix.
+static uint8_t cubzAscii(uint8_t k, uint8_t m) {
+  const bool shift = (m & 0x22) != 0;
+  const bool ctrl = (m & 0x11) != 0;
+  if (k >= HID_KEY_A && k <= HID_KEY_Z) {
+    const uint8_t c = (uint8_t)(k - HID_KEY_A);
+    if (ctrl) return (uint8_t)(c + 1);
+    return (uint8_t)((shift ? 'A' : 'a') + c);
+  }
+  if (k >= HID_KEY_1 && k <= HID_KEY_0) {
+    static const char plain[] = "1234567890";
+    static const char shifted[] = "!@#$%^&*()";
+    const uint8_t i = (uint8_t)(k - HID_KEY_1);
+    return (uint8_t)(shift ? shifted[i] : plain[i]);
+  }
+  switch (k) {
+    case HID_KEY_ENTER: case HID_KEY_KEYPAD_ENTER: return 13;
+    case HID_KEY_ESCAPE: return 27;
+    case HID_KEY_BACKSPACE: return 8;
+    case HID_KEY_TAB: return 9;
+    case HID_KEY_SPACE: return ' ';
+    case HID_KEY_DELETE: return 127;
+    case HID_KEY_MINUS: return shift ? '_' : '-';
+    case HID_KEY_EQUAL: return shift ? '+' : '=';
+    case HID_KEY_BRACKET_LEFT: return shift ? '{' : '[';
+    case HID_KEY_BRACKET_RIGHT: return shift ? '}' : ']';
+    case HID_KEY_BACKSLASH: return shift ? '|' : '\\';
+    case HID_KEY_SEMICOLON: return shift ? ':' : ';';
+    case HID_KEY_APOSTROPHE: return shift ? '"' : '\'';
+    case HID_KEY_GRAVE: return shift ? '~' : '`';
+    case HID_KEY_COMMA: return shift ? '<' : ',';
+    case HID_KEY_PERIOD: return shift ? '>' : '.';
+    case HID_KEY_SLASH: return shift ? '?' : '/';
+    // Cursor keys as the WordStar control codes used by CP/M editors.
+    case HID_KEY_ARROW_UP: return 0x05;
+    case HID_KEY_ARROW_DOWN: return 0x18;
+    case HID_KEY_ARROW_LEFT: return 0x13;
+    case HID_KEY_ARROW_RIGHT: return 0x04;
+    default: return 0;
+  }
+}
+
 static bool KEYS_SORTED  = false;
 
 static int keys_comparator(const ZxSpectrumHidKey *k1, const ZxSpectrumHidKey *k2) {
@@ -178,6 +239,9 @@ int ZxSpectrumHidKeyboard::processHidReport(hid_keyboard_report_t const *report,
 
   if (m & 0x22) press(0, BIT0); // Shift
   if (m & 0x40) press(7, BIT1); // AtlGr -> Symbol
+  const bool cobra = _ZxSpectrum && _ZxSpectrum->type() == ZxSpectrumCobra;
+  const bool cubz = _ZxSpectrum && _ZxSpectrum->type() == ZxSpectrumCubz;
+  if (cobra && (m & 0x11)) press(0, BIT5); // Ctrl -> CoBra CTRL
 
   uint32_t fkd = 0;
   uint32_t fkp = 0;
@@ -191,6 +255,19 @@ int ZxSpectrumHidKeyboard::processHidReport(hid_keyboard_report_t const *report,
       if (hidKeyCode == fkc) {
         fkd |= fkb;
         if (!isInReport(prev_report, fkc)) fkp |= fkb;
+      }
+    }
+
+    if (cubz && hidKeyCode > 1 && !isInReport(prev_report, hidKeyCode)) {
+      const uint8_t a = cubzAscii(hidKeyCode, m);
+      if (a) _ZxSpectrum->cubzKey(a);
+    }
+
+    if (cobra) {
+      for (unsigned int c = 0; c < sizeof(COBRA_KEYS) / sizeof(COBRA_KEYS[0]); ++c) {
+        const ZxSpectrumHidKey *ck = &COBRA_KEYS[c];
+        if (ck->keycode != hidKeyCode) continue;
+        for (uint32_t j = 0; j < ck->contacts; ++j) press(ck->contact[j].line, ck->contact[j].key);
       }
     }
 
@@ -235,8 +312,8 @@ int ZxSpectrumHidKeyboard::processHidReport(hid_keyboard_report_t const *report,
     if (fkp & (1 << 3)) _ZxSpectrum->toggleModerate();
     
     if (_zxSpectrumSnapList) {
-      // F8 curr snap
-      if (fkp & (1 << 7)) _zxSpectrumSnapList->curr(_ZxSpectrum);
+      // F8 curr snap (on the CoBra F5-F8 are its F1-F4 keys)
+      if ((fkp & (1 << 7)) && !cobra) _zxSpectrumSnapList->curr(_ZxSpectrum);
       // F9 previous snap
       if (fkp & (1 << 8)) _zxSpectrumSnapList->prev(_ZxSpectrum);
       // F10 next snap

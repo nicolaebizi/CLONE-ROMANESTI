@@ -24,3 +24,6 @@ build_group pico rp2040
 build_group pico2 rp2350-arm-s
 # Waveshare RP2350 PiZero
 build_group waveshare_rp2350_pizero rp2350-arm-s
+
+# Plus3 build with new board definition
+build_group pico_plus3 rp2040

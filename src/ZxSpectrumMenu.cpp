@@ -16,6 +16,10 @@
 #include "ZxSpectrumAudioDriver.h"
 #include "ZxSpectrumVideoDriver.h"
 #include "PicoCoreVoltage.h"
+#include "CobraDiskFile.h"
+#ifdef PICO_RP2350
+#include "BootSwap.h"
+#endif
 
 // #define DEBUG_ZX_MENU
 
@@ -82,6 +86,33 @@ PicoQuickKeyAscii *ZxSpectrumMenu::getQuickKey(uint i) {
   }
 }
 
+void ZxSpectrumMenu::cubzMount(uint8_t drive, FILINFO *finfo, const char *path) {
+  _zxSpectrum->cubzEjectDisk(drive);
+  if (_cubzDiskFile[drive]) {
+    delete _cubzDiskFile[drive];
+    _cubzDiskFile[drive] = 0;
+  }
+  CobraDiskFile *f = new CobraDiskFile(_sdCard, path);
+  if (!f->isOpen() || !_zxSpectrum->cubzInsertDisk(drive, f)) {
+    delete f;
+    _cubzDiskName[drive] = "? ";
+    _cubzDiskName[drive] += finfo->fname;
+    return;
+  }
+  _cubzDiskFile[drive] = f;
+  _cubzDiskName[drive] = finfo->fname;
+  if (!f->writable()) _cubzDiskName[drive] += " (R/O)";
+}
+
+void ZxSpectrumMenu::cobraEject(uint8_t drive) {
+  _zxSpectrum->cobraEjectDisk(drive);
+  if (_cobraDiskFile[drive]) {
+    delete _cobraDiskFile[drive];
+    _cobraDiskFile[drive] = 0;
+  }
+  _cobraDiskName[drive].clear();
+}
+
 void ZxSpectrumMenu::setWizLayout(int32_t margin, int32_t cols1, int32_t cols2, int32_t w) {
    _wizCol1Width = cols1;
    _wizCol2Width = cols2;
@@ -90,9 +121,27 @@ void ZxSpectrumMenu::setWizLayout(int32_t margin, int32_t cols1, int32_t cols2, 
    _wiz.move(_wizLeftMargin, _wiz.wy(), _wizCols, _wiz.wh());
    _main.move(0, 0, _wizCols, _main.wh());
    _tapePlayer.move(0, 0, _wizCols, _tapePlayer.wh());
-   _chooseTape.move(0, 0, _wizCols, _chooseTape.wh());
-   _chooseSnap.move(0, 0, _wizCols, _chooseSnap.wh());
-   _reset.move(0, 0, _wizCols, _reset.wh());
+    _chooseTape.move(0, 0, _wizCols, _chooseTape.wh());
+    _chooseSnap.move(0, 0, _wizCols, _chooseSnap.wh());
+    _hcDisk.move(0, 0, _wizCols, _hcDisk.wh());
+    _chooseHcDiskA.move(0, 0, _wizCols, _chooseHcDiskA.wh());
+    _chooseBasicDiskA.move(0, 0, _wizCols, _chooseBasicDiskA.wh());
+    _chooseHcDiskB.move(0, 0, _wizCols, _chooseHcDiskB.wh());
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+    _choosePlus3DiskA.move(0, 0, _wizCols, _choosePlus3DiskA.wh());
+    _choosePlus3DiskB.move(0, 0, _wizCols, _choosePlus3DiskB.wh());
+#endif
+#ifdef PICO_RP2350
+    _chooseTimsDiskA.move(0, 0, _wizCols, _chooseTimsDiskA.wh());
+    _chooseTimsDiskB.move(0, 0, _wizCols, _chooseTimsDiskB.wh());
+    _chooseHc88DiskA.move(0, 0, _wizCols, _chooseHc88DiskA.wh());
+    _chooseHc88DiskB.move(0, 0, _wizCols, _chooseHc88DiskB.wh());
+#endif
+    _reset.move(0, 0, _wizCols, _reset.wh());
+   _cobra.move(0, 0, _wizCols, _cobra.wh());
+   _chooseCobraDisk.move(0, 0, _wizCols, _chooseCobraDisk.wh());
+   _chooseCubzDiskA.move(0, 0, _wizCols, _chooseCubzDiskA.wh());
+   _chooseCubzDiskB.move(0, 0, _wizCols, _chooseCubzDiskB.wh());
    _joystick.move(0, 0, _wizCols, _joystick.wh());
    _mouse.move(0, 0, _wizCols, _mouse.wh());
    _devices.move(0, 2, _wizCols, _devices.wh());
@@ -119,30 +168,131 @@ ZxSpectrumMenu::ZxSpectrumMenu(
    _pathSnaps(&_pathZxSpectrum, "snapshots"),
    _pathTapes(&_pathZxSpectrum, "tapes"),
    _pathQuickSaves(&_pathSnaps, "quicksaves"),
+    _pathDisks(&_pathZxSpectrum, "disks"),
+    _pathCobraDisks(&_pathDisks, "cobra1"),
+    _pathDisksHc2000(&_pathDisks, "hc2000"),
+    _pathDisksBasic(&_pathDisks, "basic"),
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+    _pathDisksPlus3(&_pathDisks, "plus3"),
+#endif
   _sdCard(sdCard),
   _zxSpectrum(zxSpectrum),
   _zxSpectrumSettings(settings),
   _tis(0),
 
   _k1('1'), _k2('2'), _k3('3'), _k4('4'), _k5('5'), _k6('6'), _k7('7'), _k8('8'), _k9('9'), 
-  _kV('v'), _kK('k'), _kS('s'), _kQ('q'),
+  _kV('v'), _kK('k'), _kS('s'), _kQ('q'), _kC('c'), _kD('D'),
+  // Disk menu (D) rows 10-13: the CUB-Z / HC88 rows reuse the shared letter
+  // quick keys (_kC/_kD are the main-menu CoBra / Disk keys - quick keys are
+  // matched per menu, exactly like the shared _k1.._k9).
+  _kA('A'), _kB('B'),
 
   _wiz(_wizLeftMargin, 6, _wizCols, _explorerRows * _explorerRowsPerFile),
   _wizUtils(&_wiz, _explorerRowsPerFile, &_k1, &_k2),
-  _main(0, 0, _wizCols, 13, _menuRowsPerItem),
+  _main(0, 0, _wizCols, 15, _menuRowsPerItem),
   _audioOp("Audio"),
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  _mountPlus3BOp("Mount +3 B"),
+#endif
   _tapePlayer(0, 0, _wizCols, 6, _menuRowsPerItem),
 
   _chooseTapeOp("Tapes"),
   _ejectTapeOp("Eject tape"),
   _chooseTape(&_wizUtils, sdCard, &_pathTapes, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
   _chooseSnap(&_wizUtils, sdCard, &_pathSnaps, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
-  
+
+  _hcDisk(0, 0, _wizCols,
+#ifdef PICO_RP2350
+    // Rows for the RP2350-only TIM S Plus and HC88 mount entries and the two
+    // CUB-Z drives
+    13,
+#else
+    10,
+#endif
+    _menuRowsPerItem),
+  _hcDiskOp("HC2K,+3,TIMS PLUS,CUBZ"),
+  _hcDiskAOp("Mount HC2000 drive A"),
+  _hcBasicDiskAOp("Mount BASIC disk A"),
+  _hcDiskBOp("Mount HC2000 drive B"),
+  _hcDiskEjectOp("Eject disks"),
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  _plus3DiskAOp("Mount +3 drive A"),
+  _plus3DiskBOp("Mount +3 drive B"),
+#endif
+  _chooseHcDiskA(&_wizUtils, sdCard, &_pathDisksHc2000, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
+  _chooseBasicDiskA(&_wizUtils, sdCard, &_pathDisksBasic, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  _choosePlus3DiskA(&_wizUtils, sdCard, &_pathDisksPlus3, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
+  _choosePlus3DiskB(&_wizUtils, sdCard, &_pathDisksPlus3, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
+#endif
+  _chooseHcDiskB(&_wizUtils, sdCard, &_pathDisksHc2000, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
+  _hdisA(0),
+  _hdisB(0),
+  _hcMountA(-1),
+  _hcMountB(-1),
+#ifdef PICO_RP2350
+  // TIM S Plus drive mount (disk menu quick keys 8/9; RP2350 only):
+  // dedicated image folder zxspectrum/disks/TIMS PLUS (NOT the hc2000 dir).
+  _pathDisksTims(&_pathDisks, "TIMS PLUS"),
+  _timsDiskAOp("Mount TIMS PLUS drive A"),
+  _timsDiskBOp("TIMS PLUS drive B"),
+  _chooseTimsDiskA(&_wizUtils, sdCard, &_pathDisksTims, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
+  _chooseTimsDiskB(&_wizUtils, sdCard, &_pathDisksTims, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
+  _timsA(0),
+  _timsB(0),
+  _timsMountA(-1),
+  _timsMountB(-1),
+  // ICE Felix HC88 disk chooser (same chooser machinery as TIMS PLUS,
+  // RP2350 only): dedicated SD folder zxspectrum/disks/HC88 (auto-created
+  // at menu init). Phase 2 mounts into hcFdc() drives 0/1.
+  _pathDisksHc88(&_pathDisks, "HC88"),
+  _hc88DiskAOp("Mount HC88 drive A"),
+  _hc88DiskBOp("Mount HC88 drive B"),
+  _chooseHc88DiskA(&_wizUtils, sdCard, &_pathDisksHc88, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
+  _chooseHc88DiskB(&_wizUtils, sdCard, &_pathDisksHc88, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
+  _hc88A(0),
+  _hc88B(0),
+  _hc88MountA(-1),
+  _hc88MountB(-1),
+#endif
+  _pathDisksCubz(&_pathDisks, "CUBZ"),
+  _cubzDiskAOp("CUB-Z drive A"),
+  _cubzDiskBOp("CUB-Z drive B"),
+  _chooseCubzDiskA(&_wizUtils, sdCard, &_pathDisksCubz, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
+  _chooseCubzDiskB(&_wizUtils, sdCard, &_pathDisksCubz, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
+  _cubzDiskFile{0, 0},
+
   _audioOptions(0, 0, _wizCols, 6, _menuRowsPerItem),
 
-  _reset(0, 0, _wizCols, 6, _menuRowsPerItem),
+  _reset(0, 0, _wizCols,
+#ifdef PICO_RP2350
+    // Two extra rows for the RP2350-only TIM S Plus and HC88 reset entries
+    // (the list scrolls anyway)
+    9 * SZ_MENU_SEP,
+#else
+    7 * SZ_MENU_SEP,
+#endif
+    _menuRowsPerItem),
   _reset48kOp("Reset 48K ZX Spectrum"),
   _reset128kOp("Reset 128K ZX Spectrum"),
+  _resetTurboOp("Reset TURBO-SPECTRUM"),
+  _resetHc2000Op("Reset HC2000"),
+  _resetCobraOp("Reset CoBra 1"),
+#ifdef PICO_RP2350
+  _resetTimsOp("Reset TIM S Plus"),
+  _resetHc88Op("Reset HC88"),
+#endif
+  _resetCubzOp("Reset CUB-Z"),
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  _resetPlus3Op("Reset ZX Spectrum +3"),
+#endif
+
+  _cobra(0, 0, _wizCols, 9, _menuRowsPerItem),
+  _cobraEjectOp("Eject all disks"),
+  _cobraResetBasicOp("RESET BASIC (K1)"),
+  _chooseCobraDisk(&_wizUtils, sdCard, &_pathCobraDisks, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
+  _cobraDrive(0),
+  _cobraDiskFile{0, 0, 0, 0},
   
   _joystick(0, 0, _wizCols, 6, _menuRowsPerItem),
   _joystickKempstonOp("Kempston"),
@@ -230,12 +380,14 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _main.addOption(_intSourceOp.addQuickKey(&_k4));
   _main.addOption(_audioOp.addQuickKey(&_k5));
   _main.addOption(_resetOp.addQuickKey(&_k6));
+  // +3 drive B is mounted from the disk menu (D); k7 is the joystick again.
   _main.addOption(_joystickOp.addQuickKey(&_k7));
   _main.addOption(_mouseOp.addQuickKey(&_k8));
   _main.addOption(_settingsOp.addQuickKey(&_k9));
   _main.addOption(_keyboardOp.addQuickKey(&_kK));
   _main.addOption(_systemOp.addQuickKey(&_kS));
   _main.addOption(_quickSaveOp.addQuickKey(&_kQ));
+  _main.addOption(_cobraOp.addQuickKey(&_kC));
 
   _main.enableQuickKeys();
   _snapOp.onPaint([=](PicoPen *pen){
@@ -272,6 +424,7 @@ ZxSpectrumMenu::ZxSpectrumMenu(
     const char *m;
     switch(_zxSpectrum->moderate()) {
       case 9: m = "3.5 Mhz" ; break;
+      case 13: m = "2.5 Mhz" ; break;
       case 8: m = "4.0 Mhz" ; break;
       case 0: m = "Unmoderated" ; break;
       default: m = "Unknown" ; break;
@@ -306,6 +459,15 @@ ZxSpectrumMenu::ZxSpectrumMenu(
     switch(_zxSpectrum->type()) {
       case ZxSpectrum48k: m = "48k ZX Spectrum" ; break;
       case ZxSpectrum128k: m = "128k ZX Spectrum" ; break;
+      case ZxSpectrumTurbo: m = "TURBO-SPECTRUM" ; break;
+      case ZxSpectrumHc2000: m = "HC2000" ; break;
+      case ZxSpectrumCobra: m = "CoBra 1" ; break;
+      case ZxSpectrumPlus3: m = "ZX Spectrum +3" ; break;
+#ifdef PICO_RP2350
+      case ZxSpectrumTimsPlus: m = "TIM S Plus" ; break;
+      case ZxSpectrumHc88: m = "HC88" ; break;
+#endif
+      case ZxSpectrumCubz: m = "CUB-Z" ; break;
       default: m = "" ; break;
     }
     pen->printAtF(0, 0, false,"%-*s[ %-*s]", _wizCol1Width, "Reset", _wizCol2Width, m);
@@ -316,6 +478,21 @@ ZxSpectrumMenu::ZxSpectrumMenu(
       [](PicoPen *pen){ pen->printAt(0, 0, false, "Reset options"); }, 
       true);
   });
+
+  // ZX Spectrum +3: k7 on the main menu opens the +3 drive B chooser directly.
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  _mountPlus3BOp.onPaint([=](PicoPen *pen){
+    pen->clear();
+    pen->printAtF(0, 0, false, "%-*s[ %-*s]", _wizCol1Width, "Mount +3 B", _wizCol2Width, _hcDiskNameB.c_str());
+  });
+  _mountPlus3BOp.toggle([=]() {
+    _choosePlus3DiskB.reload();
+    _wiz.push(
+      &_choosePlus3DiskB,
+      [=](PicoPen *pen){ pen->printAt(0, 0, false, "+3 disk images (B:)"); },
+      true);
+  });
+#endif
 
   _settings.addOption(_settingsSaveOp.addQuickKey(&_k1));
   _settings.addOption(_settingsLoadOp.addQuickKey(&_k2));
@@ -497,7 +674,513 @@ ZxSpectrumMenu::ZxSpectrumMenu(
 
   _reset.addOption(_reset48kOp.addQuickKey(&_k1));
   _reset.addOption(_reset128kOp.addQuickKey(&_k2));
+  _reset.addOption(_resetTurboOp.addQuickKey(&_k3));
+  _reset.addOption(_resetHc2000Op.addQuickKey(&_k4));
+  _reset.addOption(_resetCobraOp.addQuickKey(&_k5));
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  // Verified lesson (LESSONS.md): reset submenu key k6 resets ZX Spectrum +3.
+  _reset.addOption(_resetPlus3Op.addQuickKey(&_k6));
+#endif
+#ifdef PICO_RP2350
+  // TIM S Plus (boot-only, RP2350 only): the free quick key in the reset
+  // submenu (k1-k5/k6 +3 already taken; the entry scrolls into view).
+  // Disk mounting is NOT here: it lives in the HC2000 disk menu below.
+  _reset.addOption(_resetTimsOp.addQuickKey(&_k7));
+  _reset.addOption(_resetCubzOp.addQuickKey(&_k8));
+  // ICE Felix HC88 (RP2350 only): after the CUB-Z entry, last free quick
+  // key (k9). Phase 1 is machine type + memory map + VRAM video only;
+  // disk mounts live in the HC2000 disk menu below.
+  _reset.addOption(_resetHc88Op.addQuickKey(&_k9));
+#endif
+  _resetCubzOp.toggle([=]() {
+    _snapName.clear();
+    _zxSpectrum->reset(ZxSpectrumCubz);
+    _wiz.pop(true);
+  });
   _reset.enableQuickKeys();
+
+  _resetTurboOp.toggle([=]() {
+    _snapName.clear();
+    _zxSpectrum->reset(ZxSpectrumTurbo);
+    _wiz.pop(true);
+  });
+
+  _resetHc2000Op.toggle([=]() {
+    _snapName.clear();
+    _zxSpectrum->reset(ZxSpectrumHc2000);
+    _wiz.pop(true);
+  });
+
+  _resetCobraOp.toggle([=]() {
+    _snapName.clear();
+    _zxSpectrum->reset(ZxSpectrumCobra);
+    _wiz.pop(true);
+  });
+
+#ifdef PICO_RP2350
+  _resetTimsOp.toggle([=]() {
+    _snapName.clear();
+    _zxSpectrum->reset(ZxSpectrumTimsPlus);
+    _wiz.pop(true);
+  });
+
+  _resetHc88Op.toggle([=]() {
+    _snapName.clear();
+    _zxSpectrum->reset(ZxSpectrumHc88);
+    _wiz.pop(true);
+  });
+
+  // TIM S Plus disk mounts (phase 2, RP2350 only): the same SD chooser
+  // machinery as the HC2000 chooser, but pointed at the dedicated folder
+  // zxspectrum/disks/TIMS PLUS (created at menu init). Drive A = FDC
+  // unit 0, drive B = FDC unit 1 (fuse tims_fdc.c). The row label shows
+  // the mounted file name, HC2000 style.
+  _timsDiskAOp.onPaint([=](PicoPen *pen){
+    pen->clear();
+    pen->printAtF(0, 0, false,"%-*s[ %-*s]", _wizCol1Width, "TIMS PLUS drive A",
+      _wizCol2Width, _timsDiskNameA.empty() ? "-" : _timsDiskNameA.c_str());
+  });
+  _timsDiskBOp.onPaint([=](PicoPen *pen){
+    pen->clear();
+    pen->printAtF(0, 0, false,"%-*s[ %-*s]", _wizCol1Width, "TIMS PLUS drive B",
+      _wizCol2Width, _timsDiskNameB.empty() ? "-" : _timsDiskNameB.c_str());
+  });
+
+  _timsDiskAOp.toggle([=]() {
+    _chooseTimsDiskA.reload();
+    _wiz.push(
+      &_chooseTimsDiskA,
+      [=](PicoPen *pen){ pen->printAtF(0, 0, false, "%s", "TIMS PLUS disk images (A:)"); },
+      true);
+  });
+  _timsDiskBOp.toggle([=]() {
+    _chooseTimsDiskB.reload();
+    _wiz.push(
+      &_chooseTimsDiskB,
+      [=](PicoPen *pen){ pen->printAtF(0, 0, false, "%s", "TIMS PLUS disk images (B:)"); },
+      true);
+  });
+
+  _chooseTimsDiskA.onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+    if (_timsMountA >= 0) {
+      _zxSpectrum->hcFdc().eject(_timsMountA);
+      if (_timsA) delete _timsA;
+      _timsDiskNameA.clear();
+      _timsMountA = -1;
+    }
+    _timsA = new FatFsSpiInputStream(_sdCard, path);
+    if (_zxSpectrum->hcFdc().mount(0, _timsA)) {
+      _timsDiskNameA = finfo->fname;
+      _timsMountA = 0;
+    } else {
+      delete _timsA; _timsA = 0;
+      _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported TIMS PLUS DSK"); });
+    }
+    _wiz.pop(true);
+  };
+
+  _chooseTimsDiskB.onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+    if (_timsMountB >= 0) {
+      _zxSpectrum->hcFdc().eject(_timsMountB);
+      if (_timsB) delete _timsB;
+      _timsDiskNameB.clear();
+      _timsMountB = -1;
+    }
+    _timsB = new FatFsSpiInputStream(_sdCard, path);
+    if (_zxSpectrum->hcFdc().mount(1, _timsB)) {
+      _timsDiskNameB = finfo->fname;
+      _timsMountB = 1;
+    } else {
+      delete _timsB; _timsB = 0;
+      _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported TIMS PLUS DSK"); });
+    }
+    _wiz.pop(true);
+  };
+
+  _chooseTimsDiskA.onRefreshDisplay = [=]() { _hcDisk.repaint(); };
+  _chooseTimsDiskB.onRefreshDisplay = [=]() { _hcDisk.repaint(); };
+#endif
+
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  _resetPlus3Op.toggle([=]() {
+    _snapName.clear();
+    _zxSpectrum->reset(ZxSpectrumPlus3);
+    _wiz.pop(true);
+  });
+#endif
+
+  // CoBra 1
+  _cobraOp.onPaint([=](PicoPen *pen){
+    pen->clear();
+    pen->printAtF(0, 0, false,"%-*s", _wizCol1Width, "CoBra 1");
+  });
+  _cobraOp.toggle([=]() {
+    _wiz.push(
+      &_cobra,
+      [](PicoPen *pen){ pen->printAt(0, 0, false, "CoBra 1 - floppy v1.2, mainboard v0.2"); },
+      true);
+  });
+
+#ifdef PICO_RP2350
+  // Boot Manager: flash /sys/bootman_rp2350.bin into slot 0 and reboot.
+  // Two-step confirm (same pattern as System > Boot select); success never
+  // returns (watchdog reboot into the boot manager browser). No quick key.
+  _bootManOp.onPaint([=](PicoPen *pen){
+    pen->clear();
+    pen->printAtF(0, 0, false, "%-*s", _wizCol1Width, "-> Boot Manager");
+  });
+  _bootManOp.toggle([=]() {
+    _wizUtils.confirm(
+      [=](PicoPen *pen){
+        pen->printAtF(2, 0, false, "Flash boot manager? (%s)", BOOT_SWAP_PATH_BOOTMAN);
+      },
+      [=]() {
+        if (!bootSwapFromSd(BOOT_SWAP_PATH_BOOTMAN)) {
+          // Refused by a gate (missing file, PICOBIN/RP2040 image, ...):
+          // boot swap declined, flash not touched - inform the user.
+          _wizUtils.showMessage([=](PicoPen *pen){
+            pen->clear();
+            pen->printAt(0, 1, false, "Boot manager image refused");
+            pen->printAt(0, 2, false, "Check Uart log / /sys file");
+          });
+        }
+      }
+    );
+  });
+#endif
+  for (uint8_t d = 0; d < 4; ++d) {
+    _cobra.addOption(_cobraDiskOp[d].addQuickKey(getQuickKey(d)));
+    _cobraDiskOp[d].onPaint([=](PicoPen *pen){
+      pen->clear();
+      char label[8];
+      snprintf(label, sizeof(label), "Disk %c:", 'A' + d);
+      pen->printAtF(0, 0, false,"%-*s[ %-*s]", _wizCol1Width, label, _wizCol2Width, _cobraDiskName[d].c_str());
+    });
+    _cobraDiskOp[d].toggle([=]() {
+      _cobraDrive = d;
+      _wiz.push(
+        &_chooseCobraDisk,
+        [=](PicoPen *pen){ pen->printAtF(0, 0, false, "Disk %c: (IMG 720K, DSK, EDSK)", 'A' + d); },
+        true);
+    });
+  }
+  _cobra.addOption(_cobraEjectOp.addQuickKey(&_k5));
+  _cobra.addOption(_cobraConfigOp.addQuickKey(&_k6));
+  _cobra.addOption(_cobraInterleaveOp.addQuickKey(&_k7));
+  _cobra.addOption(_cobraResetBasicOp.addQuickKey(&_k8));
+  _cobra.enableQuickKeys();
+  _cobraEjectOp.toggle([=]() {
+    for (uint8_t d = 0; d < 4; ++d) cobraEject(d);
+    _cobra.repaint();
+  });
+  _cobraConfigOp.onPaint([=](PicoPen *pen){
+    pen->clear();
+    const char *m;
+    switch(_zxSpectrum->cobraConfig()) {
+      case Cobra80K80Col: m = "80K + 80 chr/lin"; break;
+      case Cobra80K: m = "80K (Modif. 80K)"; break;
+      default: m = "64K (Std. / Modif. 64K)"; break;
+    }
+    pen->printAtF(0, 0, false,"%-*s[ %-*s]", _wizCol1Width, "Jumpers", _wizCol2Width, m);
+  });
+  _cobraConfigOp.toggle([=]() {
+    // Re-jumpering the board: takes effect with a power-on reset.
+    const CobraConfig c = _zxSpectrum->cobraConfig();
+    _zxSpectrum->cobraConfig(c == Cobra80K80Col ? Cobra80K : c == Cobra80K ? Cobra64K : Cobra80K80Col);
+    if (_zxSpectrum->type() == ZxSpectrumCobra) _zxSpectrum->reset(ZxSpectrumCobra);
+    _cobra.repaint();
+  });
+  _cobraInterleaveOp.onPaint([=](PicoPen *pen){
+    pen->clear();
+    pen->printAtF(0, 0, false,"%-*s[ %-*s]", _wizCol1Width, "IMG 18x256", _wizCol2Width,
+      CobraDisk::rawInterleaved() ? "interleaved (1,10,2,11..)" : "sector order (1,2,3..)");
+  });
+  _cobraInterleaveOp.toggle([=]() {
+    CobraDisk::rawInterleaved(!CobraDisk::rawInterleaved());
+    _cobra.repaint();
+  });
+  _cobraResetBasicOp.toggle([=]() {
+    _zxSpectrum->cobraResetBasic();
+    _wiz.pop(true);
+  });
+  _chooseCobraDisk.onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+    const uint8_t d = _cobraDrive;
+    cobraEject(d);
+    CobraDiskFile *f = new CobraDiskFile(_sdCard, path);
+    if (!f->isOpen() || !_zxSpectrum->cobraInsertDisk(d, f)) {
+      delete f;
+      _cobraDiskName[d] = "? ";
+      _cobraDiskName[d] += finfo->fname;
+    }
+    else {
+      _cobraDiskFile[d] = f;
+      _cobraDiskName[d] = finfo->fname;
+      if (!f->writable()) _cobraDiskName[d] += " (R/O)";
+    }
+    _wiz.pop(true);
+  };
+
+  // ICE Felix HC2000 disk drive mount / eject (zxspectrum/disks/hc2000)
+  _main.addOption(_hcDiskOp.addQuickKey(&_kD));
+  _hcDiskOp.toggle([=]() {
+    _wiz.push(
+      &_hcDisk,
+      [=](PicoPen *pen){
+        pen->printAt(0, 0, false, "SE APASA TASTA 5 PENTRU REFRESH SD CARD");
+        pen->printAtF(0, 1, false, "Disk images  [ %s%s]",
+        _hcDiskNameA.empty() ? "-" : _hcDiskNameA.c_str(),
+        _hcDiskNameB.empty() ? "" : _hcDiskNameB.c_str()); },
+      true);
+  });
+
+  _hcDisk.addOption(_hcDiskAOp.addQuickKey(&_k1));
+  _hcDisk.addOption(_hcDiskBOp.addQuickKey(&_k2));
+  _hcDisk.addOption(_hcDiskEjectOp.addQuickKey(&_k3));
+  _hcDisk.addOption(_hcBasicDiskAOp.addQuickKey(&_k5));
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  _hcDisk.addOption(_plus3DiskAOp.addQuickKey(&_k6));
+  _hcDisk.addOption(_plus3DiskBOp.addQuickKey(&_k7));
+#endif
+#ifdef PICO_RP2350
+  // TIM S Plus disk mounts (phase 2, RP2350 only): last rows of the disk
+  // menu ("D. HC2K..." -> Disk images), quick keys k8/k9.
+  // k8 = drive A (FDC unit 0), k9 = drive B (FDC unit 1).
+  _hcDisk.addOption(_timsDiskAOp.addQuickKey(&_k8));
+  _hcDisk.addOption(_timsDiskBOp.addQuickKey(&_k9));
+#endif
+  // ICE Felix CUB-Z drives (rows 10 and 11, quick keys A/B - digits 1-9
+  // are taken by the rows above)
+  _hcDisk.addOption(_cubzDiskAOp.addQuickKey(&_kA));
+  _hcDisk.addOption(_cubzDiskBOp.addQuickKey(&_kB));
+  for (uint8_t d = 0; d < 2; ++d) {
+    PicoOptionText *op = d ? &_cubzDiskBOp : &_cubzDiskAOp;
+    op->onPaint([=](PicoPen *pen){
+      pen->clear();
+      pen->printAtF(0, 0, false,"%-*s[ %-*s]", _wizCol1Width, d ? "CUB-Z drive B" : "CUB-Z drive A",
+        _wizCol2Width, _cubzDiskName[d].empty() ? "-" : _cubzDiskName[d].c_str());
+    });
+    PicoWizExplorer *ex = d ? &_chooseCubzDiskB : &_chooseCubzDiskA;
+    op->toggle([=]() {
+      ex->reload();
+      _wiz.push(
+        ex,
+        [=](PicoPen *pen){ pen->printAtF(0, 0, false, "CUB-Z disk images (%c:)  5=REFRESH", 'A' + d); },
+        true);
+    });
+    ex->onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+      cubzMount(d, finfo, path);
+      _wiz.pop(true);
+    };
+  }
+#ifdef PICO_RP2350
+  // ICE Felix HC88 disk rows 12/13 (RP2350 only, quick keys C/D, reusing
+  // the shared _kC/_kD matchers): the same chooser + mount machinery as the
+  // TIMS PLUS rows, pointed at the dedicated folder zxspectrum/disks/HC88
+  // (auto-created at menu init). Drive A = FDC unit 0, drive B = FDC unit 1
+  // (fuse hc88_fdc.c: HC-88 BIOS only addresses units 0/1). The row label
+  // shows the mounted file name, TIMS PLUS style.
+  _hcDisk.addOption(_hc88DiskAOp.addQuickKey(&_kC));
+  _hcDisk.addOption(_hc88DiskBOp.addQuickKey(&_kD));
+  _hc88DiskAOp.onPaint([=](PicoPen *pen){
+    pen->clear();
+    pen->printAtF(0, 0, false,"%-*s[ %-*s]", _wizCol1Width, "HC88 drive A",
+      _wizCol2Width, _hc88DiskNameA.empty() ? "-" : _hc88DiskNameA.c_str());
+  });
+  _hc88DiskBOp.onPaint([=](PicoPen *pen){
+    pen->clear();
+    pen->printAtF(0, 0, false,"%-*s[ %-*s]", _wizCol1Width, "HC88 drive B",
+      _wizCol2Width, _hc88DiskNameB.empty() ? "-" : _hc88DiskNameB.c_str());
+  });
+
+  _hc88DiskAOp.toggle([=]() {
+    _chooseHc88DiskA.reload();
+    _wiz.push(
+      &_chooseHc88DiskA,
+      [=](PicoPen *pen){ pen->printAtF(0, 0, false, "%s", "HC88 disk images (A:)"); },
+      true);
+  });
+  _hc88DiskBOp.toggle([=]() {
+    _chooseHc88DiskB.reload();
+    _wiz.push(
+      &_chooseHc88DiskB,
+      [=](PicoPen *pen){ pen->printAtF(0, 0, false, "%s", "HC88 disk images (B:)"); },
+      true);
+  });
+
+  _chooseHc88DiskA.onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+    if (_hc88MountA >= 0) {
+      _zxSpectrum->hcFdc().eject(_hc88MountA);
+      if (_hc88A) delete _hc88A;
+      _hc88DiskNameA.clear();
+      _hc88MountA = -1;
+    }
+    _hc88A = new FatFsSpiInputStream(_sdCard, path);
+    if (_zxSpectrum->hcFdc().mount(0, _hc88A)) {
+      _hc88DiskNameA = finfo->fname;
+      _hc88MountA = 0;
+    } else {
+      delete _hc88A; _hc88A = 0;
+      _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported HC88 DSK"); });
+    }
+    _wiz.pop(true);
+  };
+
+  _chooseHc88DiskB.onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+    if (_hc88MountB >= 0) {
+      _zxSpectrum->hcFdc().eject(_hc88MountB);
+      if (_hc88B) delete _hc88B;
+      _hc88DiskNameB.clear();
+      _hc88MountB = -1;
+    }
+    _hc88B = new FatFsSpiInputStream(_sdCard, path);
+    if (_zxSpectrum->hcFdc().mount(1, _hc88B)) {
+      _hc88DiskNameB = finfo->fname;
+      _hc88MountB = 1;
+    } else {
+      delete _hc88B; _hc88B = 0;
+      _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported HC88 DSK"); });
+    }
+    _wiz.pop(true);
+  };
+
+  _chooseHc88DiskA.onRefreshDisplay = [=]() { _hcDisk.repaint(); };
+  _chooseHc88DiskB.onRefreshDisplay = [=]() { _hcDisk.repaint(); };
+#endif
+  _hcDisk.enableQuickKeys();
+
+  _hcDiskAOp.toggle([=]() {
+    _chooseHcDiskA.reload();
+    _wiz.push(
+      &_chooseHcDiskA,
+      [=](PicoPen *pen){ pen->printAtF(0, 0, false, "%s", "HC2000 disk images (A:)"); },
+      true);
+  });
+
+  _hcBasicDiskAOp.toggle([=]() {
+    _chooseBasicDiskA.reload();
+    _wiz.push(
+      &_chooseBasicDiskA,
+      [=](PicoPen *pen){ pen->printAt(0, 0, false, "BASIC disk images (A:)"); },
+      true);
+  });
+
+  _hcDiskBOp.toggle([=]() {
+    _chooseHcDiskB.reload();
+    _wiz.push(
+      &_chooseHcDiskB,
+      [=](PicoPen *pen){ pen->printAtF(0, 0, false, "%s", "HC2000 disk images (B:)"); },
+      true);
+  });
+
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  _plus3DiskAOp.toggle([=]() {
+    _choosePlus3DiskA.reload();
+    _wiz.push(
+      &_choosePlus3DiskA,
+      [=](PicoPen *pen){ pen->printAt(0, 0, false, "+3 disk images (A:)"); },
+      true);
+  });
+  _plus3DiskBOp.toggle([=]() {
+    _choosePlus3DiskB.reload();
+    _wiz.push(
+      &_choosePlus3DiskB,
+      [=](PicoPen *pen){ pen->printAt(0, 0, false, "+3 disk images (B:)"); },
+      true);
+  });
+#endif
+
+  _hcDiskEjectOp.toggle([=]() {
+    if (_hcMountA >= 0) { _zxSpectrum->hcFdc().eject(_hcMountA); if (_hdisA) { delete _hdisA; _hdisA = 0; } _hcDiskNameA.clear(); _hcMountA = -1; }
+    if (_hcMountB >= 0) { _zxSpectrum->hcFdc().eject(_hcMountB); if (_hdisB) { delete _hdisB; _hdisB = 0; } _hcDiskNameB.clear(); _hcMountB = -1; }
+    _wiz.pop(true);
+  });
+
+  _chooseHcDiskA.onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+    if (_hcMountA >= 0) { _zxSpectrum->hcFdc().eject(_hcMountA); if (_hdisA) { delete _hdisA; } }
+    _hdisA = new FatFsSpiInputStream(_sdCard, path);
+    if (_zxSpectrum->hcFdc().mount(0, _hdisA)) {
+      _hcDiskNameA = finfo->fname;
+      _hcMountA = 0;
+    } else {
+      delete _hdisA; _hdisA = 0;
+      _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Not an HC2000 DSK image"); });
+    }
+    _wiz.pop(true);
+  };
+
+  _chooseBasicDiskA.onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+    if (_hcMountA >= 0) {
+      _zxSpectrum->hcFdc().eject(_hcMountA);
+      if (_hdisA) delete _hdisA;
+    }
+    _hdisA = new FatFsSpiInputStream(_sdCard, path);
+    if (_zxSpectrum->hcFdc().mount(0, _hdisA)) {
+      _hcDiskNameA = finfo->fname;
+      _hcMountA = 0;
+    } else {
+      delete _hdisA; _hdisA = 0;
+      _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported BASIC disk"); });
+    }
+    _wiz.pop(true);
+  };
+
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  _choosePlus3DiskA.onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+    if (_hcMountA >= 0) {
+      _zxSpectrum->hcFdc().eject(_hcMountA);
+      if (_hdisA) delete _hdisA;
+      _hcDiskNameA.clear();
+      _hcMountA = -1;
+    }
+    _hdisA = new FatFsSpiInputStream(_sdCard, path);
+    if (_zxSpectrum->hcFdc().mount(0, _hdisA, true)) {
+      _hcDiskNameA = finfo->fname;
+      _hcMountA = 0;
+    } else {
+      delete _hdisA; _hdisA = 0;
+      _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported +3 DSK"); });
+    }
+    _wiz.pop(true);
+  };
+  _choosePlus3DiskB.onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+    if (_hcMountB >= 0) {
+      _zxSpectrum->hcFdc().eject(_hcMountB);
+      if (_hdisB) delete _hdisB;
+      _hcDiskNameB.clear();
+      _hcMountB = -1;
+    }
+    _hdisB = new FatFsSpiInputStream(_sdCard, path);
+    if (_zxSpectrum->hcFdc().mount(1, _hdisB, true)) {
+      _hcDiskNameB = finfo->fname;
+      _hcMountB = 1;
+    } else {
+      delete _hdisB; _hdisB = 0;
+      _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported +3 DSK"); });
+    }
+    _wiz.pop(true);
+  };
+#endif
+
+  _chooseHcDiskB.onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+    if (_hcMountB >= 0) { _zxSpectrum->hcFdc().eject(_hcMountB); if (_hdisB) { delete _hdisB; } }
+    _hdisB = new FatFsSpiInputStream(_sdCard, path);
+    if (_zxSpectrum->hcFdc().mount(1, _hdisB)) {
+      _hcDiskNameB = finfo->fname;
+      _hcMountB = 1;
+    } else {
+      delete _hdisB; _hdisB = 0;
+      _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Not an HC2000 DSK image"); });
+    }
+    _wiz.pop(true);
+  };
+
+  _chooseHcDiskA.onRefreshDisplay = [=]() { _hcDisk.repaint(); };
+  _chooseBasicDiskA.onRefreshDisplay = [=]() { _hcDisk.repaint(); };
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  _choosePlus3DiskA.onRefreshDisplay = [=]() { _hcDisk.repaint(); };
+  _choosePlus3DiskB.onRefreshDisplay = [=]() { _hcDisk.repaint(); };
+#endif
+  _chooseHcDiskB.onRefreshDisplay = [=]() { _hcDisk.repaint(); };
 
   _reset48kOp.toggle([=]() {
     _snapName.clear();
@@ -689,6 +1372,10 @@ _audioOutOptions.addOption(_audioHdmiOp.addQuickKey(getQuickKey(audioOutQuickKey
 
      pen->printAt(0, SZ_FRAME_ROWS-1, false, "F1 to exit menu");
      pen->printAt(SZ_FRAME_COLS-14, SZ_FRAME_ROWS-1, false, "ESC to go back");
+#if SZ_FRAME_COLS >= 52
+     // Author credit, lowercase, centered between the two hints above
+     pen->printAt((SZ_FRAME_COLS-22)/2, SZ_FRAME_ROWS-1, false, "by bizonul66@yahoo.com");
+#endif
    }); 
 }
 
@@ -803,6 +1490,19 @@ void ZxSpectrumMenu::initialise() {
 
   _pathQuickSaves.createFolders(_sdCard);
   _pathTapes.createFolders(_sdCard);
+  _pathDisks.createFolders(_sdCard);
+  _pathDisksHc2000.createFolders(_sdCard);
+  _pathDisksBasic.createFolders(_sdCard);
+  _pathDisksCubz.createFolders(_sdCard);
+#ifdef PICO_RP2350
+  _pathDisksTims.createFolders(_sdCard);
+  // ICE Felix HC88: auto-create zxspectrum/disks/HC88 at menu init, same
+  // pattern as the TIMS PLUS folder above.
+  _pathDisksHc88.createFolders(_sdCard);
+#endif
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  _pathDisksPlus3.createFolders(_sdCard);
+#endif
 
   _chooseTape.load();
   _chooseSnap.load();

@@ -379,12 +379,16 @@ target_compile_definitions(ZX-MURMULATOR_VGA_I2S_AUDIO_640x480x60Hz PRIVATE
   ${ZX-MURMULATOR_VGA_defines}
   ${ZX-MURMULATOR_VGA_I2S_Audio_defines}
   ${zxspectrum_vga_640x480x60Hz_defines}
+  # 200MHz needs 1.30V, 1.20V crashes on HW
+  VREG_VSEL=VREG_VOLTAGE_1_30
 )
 
 target_compile_definitions(ZX-MURMULATOR_VGA_I2S_AUDIO_720x576x50Hz PRIVATE
   ${ZX-MURMULATOR_VGA_defines}
   ${ZX-MURMULATOR_VGA_I2S_Audio_defines}
   ${zxspectrum_vga_720x576x50Hz_defines}
+  # 200MHz needs 1.30V, 1.20V crashes on HW
+  VREG_VSEL=VREG_VOLTAGE_1_30
 )
 
 #========================================================
@@ -472,11 +476,15 @@ target_compile_definitions(ZX-MURMULATOR2_VGA_I2S_AUDIO_640x480x60Hz PRIVATE
   ${ZX-MURMULATOR2_VGA_defines}
   ${ZX-MURMULATOR2_VGA_I2S_Audio_defines}
   ${zxspectrum_vga_640x480x60Hz_defines}
+  # 200MHz needs 1.30V, 1.20V crashes on HW
+  VREG_VSEL=VREG_VOLTAGE_1_30
 )
 
 target_compile_definitions(ZX-MURMULATOR2_VGA_I2S_AUDIO_720x576x50Hz PRIVATE
   ${ZX-MURMULATOR2_VGA_defines}
   ${ZX-MURMULATOR2_VGA_I2S_Audio_defines}
   ${zxspectrum_vga_720x576x50Hz_defines}
+  # 200MHz needs 1.30V, 1.20V crashes on HW
+  VREG_VSEL=VREG_VOLTAGE_1_30
 )
 

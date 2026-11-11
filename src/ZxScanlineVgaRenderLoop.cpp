@@ -245,6 +245,23 @@ void __not_in_flash_func(ZxScanlineVgaRenderLoop)(
         y - blankTopLines,
         frame_num);
     }
+    else if (zxSpectrum.cubz()) {
+      zx_prepare_scanvideo_scanline_cubz(
+        scanline_buffer,
+        y - blankTopLines,
+        zxSpectrum.cubzVram(),
+        zxSpectrum.cubzScroll()
+      );
+    }
+    else if (zxSpectrum.cobra80Char()) {
+      zx_prepare_scanvideo_scanline_cobra80(
+        scanline_buffer,
+        y - blankTopLines,
+        frame_num,
+        zxSpectrum.cobraVram(),
+        zxSpectrum.borderColour(y - blankTopLines)
+      );
+    }
     else { 
       zx_prepare_scanvideo_scanline(
         scanline_buffer, 

@@ -21,6 +21,27 @@ This project is intended to be relatively easy to breadboard or prototype in som
 * Kempston and Sinclair joystick emulation
 * Kempston mouse emulation
 
+## Supported machines
+The firmware now supports the following machine types (from `src/ZxSpectrum.h`):
+
+| # | Machine | Notes |
+| - | ------- | ----- |
+| 1 | ZX Spectrum 48K | |
+| 2 | ZX Spectrum 128K | |
+| 3 | ZX Spectrum Turbo | |
+| 4 | HC2000 | Romanian HC clone |
+| 5 | CoBra 1 | Romanian clone, 80K/64K jumpers |
+| 6 | Amstrad +3B | Shown when +3 ROMs are available |
+| 7 | TIM S Plus | Romanian clone (RP2350 only) |
+| 8 | CUB-Z | Romanian clone, CP/M machine |
+| 9 | HC88 | Romanian clone (RP2350 only) |
+
+## Romanian clones
+* **TIM S Plus** (RP2350 only): boot by mounting an EDSK image from the SD card folder `zxspectrum/disks/TIMS PLUS/` via menu D rows 8/9; the reset-menu entry is key 7; the boot menu keys 1-6 select among the border colours defined by the manual: 1 = blue (CP/M), 2 = red (+2 + IF1), 3 = violet (+3).
+* **HC88** (RP2350 only): disk menu D rows 12/13, quick keys C/D, images from `zxspectrum/disks/HC88/`; the reset-menu entry is key 9.
+* **CUB-Z**: disk menu D rows 10/11, quick keys A/B.
+* Note: Pico 1 / RP2040 builds exclude TIM S Plus and HC88 (not enough RAM).
+
 ## Updates
 05/10/25
 

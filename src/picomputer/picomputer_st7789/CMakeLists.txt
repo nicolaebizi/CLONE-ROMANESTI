@@ -274,5 +274,80 @@ target_compile_definitions(ZxSpectrumPicomputerZx2Lcd_640x480x60Hz PRIVATE
   REAL_ZXKEYBOARD
   REAL_ZXKEYBOARD_BOB
   HID_KEY_MOD_SAVE=2
-  DEFAULT_VIDEO_DRIVER=zx_spectrum_video_driver_vga_index  
+  DEFAULT_VIDEO_DRIVER=zx_spectrum_video_driver_vga_index
 )
+
+# ZX MURMULATOR board with ILI9341 SPI TFT (ST7789 driver path) + I2S audio + PS/2 keyboard
+add_executable(ZxSpectrumMurmulatorTftIli9341I2sPs2
+  ${zxspectrum_common_src}
+  ${picomputer_common_src}
+  ${zxspectrum_st7789_lcd_src}
+  main.cpp
+  st7789_lcd.cpp
+  pzx_prepare_rgb444_scanline.cpp
+)
+
+zxspectrum_generate_pio_headers(ZxSpectrumMurmulatorTftIli9341I2sPs2)
+
+target_compile_definitions(ZxSpectrumMurmulatorTftIli9341I2sPs2 PRIVATE
+  # ILI9341 TFT LCD
+  PICO_ST7789_LCD
+  LCD_PIN_CS=6
+  LCD_PIN_DC=10
+  LCD_PIN_DIN=12
+  LCD_PIN_CLK=13
+  LCD_PIN_BL=9
+  LCD_PIN_RESET=8
+  LCD_INVERSE
+  LCD_RGB
+  # ZX MURMULATOR peripherals, copied from ZX-MURMULATOR_VGA_I2S
+  # target in src/vga/CMakeLists.txt (VGA/scanvideo and NESPAD defines
+  # omitted - not applicable to this LCD build)
+  ZX_PLATFORM="MURMULATOR"
+  # Configure the SPI sd card to use SPI0
+  SDCARD_PIN_SPI0_CS=5
+  SDCARD_PIN_SPI0_SCK=2
+  SDCARD_PIN_SPI0_MOSI=3
+  SDCARD_PIN_SPI0_MISO=4
+  # Use the alternate volume map
+  AY8912_ALT_VOL_MAP
+  # Tape audio in
+  EAR_PIN=22
+  # Enable the PS/2 keyboard
+  USE_PS2_KBD
+  PS2KBD_CLK0_DAT
+  # Configure the I2S audio, pio1 SM ?
+  PICO_AUDIO_I2S=1
+  PICO_AUDIO_I2S_PIO=pio1
+  PICO_AUDIO_I2S_PIO_FUNC=GPIO_FUNC_PIO1
+  PICO_AUDIO_I2S_DATA=26
+  PICO_AUDIO_I2S_BCLK=27
+  # Keyboard variant for compiling pzx_keyscan.cpp (pulled in via
+  # picomputer_common_src). NOTE: USE_KEY_MATRIX is intentionally NOT
+  # defined - like the ZX-MURMULATOR VGA target, keyboard input comes
+  # from PS/2 through the TinyUSB HID stack, so the local GPIO key
+  # matrix is never initialised and stays dormant.
+  PICOMPUTER_MAX
+  # NOTE: PICOMPUTER_PICOZX_LCD is intentionally NOT defined here. On
+  # Murmulator M1 GPIO4 is SD SPI0 MISO; the PicoZX backlight hack in
+  # ZxSt7789LcdRenderLoop.cpp (gpio_put(4,1)) must never compile in.
+  # Backlight is driven by st7789_lcd.cpp via LCD_PIN_BL=9 instead.
+  # Core voltage default overridden to avoid brownout on this board.
+  VREG_VSEL=VREG_VOLTAGE_1_30
+)
+
+target_link_libraries(ZxSpectrumMurmulatorTftIli9341I2sPs2
+  ${zxspectrum_common_libs}
+  pico_emu_utils
+  pico_st7789_menu
+  tinyusb_host
+  tinyusb_board
+  hardware_pio
+  hardware_pwm
+)
+
+pico_enable_stdio_usb(ZxSpectrumMurmulatorTftIli9341I2sPs2 0)
+pico_enable_stdio_uart(ZxSpectrumMurmulatorTftIli9341I2sPs2 0)
+
+# create map/bin/hex file etc.
+pico_add_extra_outputs(ZxSpectrumMurmulatorTftIli9341I2sPs2)

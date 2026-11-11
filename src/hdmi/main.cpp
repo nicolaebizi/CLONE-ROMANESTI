@@ -65,7 +65,9 @@ extern "C" {
 #define UART_RX_PIN 1
 
 // DVDD 1.2V (1.1V seems ok too)
+#ifndef VREG_VSEL
 #define VREG_VSEL VREG_VOLTAGE_1_20
+#endif
 
 #define LED_PIN 25
 

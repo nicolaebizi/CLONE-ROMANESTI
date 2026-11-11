@@ -44,8 +44,22 @@
 #include "ZxSpectrumAudioDriver.h"
 #include "ZxSpectrumVideoDriver.h"
 
+#if defined(USE_PS2_KBD)
+#include "ps2kbd.h"
+#endif
+
 // TODO This should probably not be in here
 #define LED_PIN 25
+
+// Boot progress instrumentation (busy_wait only, no tick dependency)
+static inline void blink_led(int n, uint32_t on_ms, uint32_t off_ms) {
+  for (int i = 0; i < n; ++i) {
+    gpio_put(LED_PIN, 1);
+    busy_wait_ms(on_ms);
+    gpio_put(LED_PIN, 0);
+    busy_wait_ms(off_ms);
+  }
+}
 
 static SdCardFatFsSpi sdCard0(0);
 
@@ -158,6 +172,10 @@ extern "C"  void __not_in_flash_func(process_kbd_report)(hid_keyboard_report_t c
   }
 }
 
+#if defined(USE_PS2_KBD)
+static Ps2Kbd ps2kbd(pio1, PS2KBD_GPIO, process_kbd_report);
+#endif
+
 void __not_in_flash_func(process_picomputer_kbd_report)(hid_keyboard_report_t const *report, hid_keyboard_report_t const *prev_report) {
   int r;
   if (showMenu) {
@@ -194,7 +212,12 @@ void __not_in_flash_func(setMenuState)(bool showMenu) {
 }
 
 void __not_in_flash_func(ZxRenderLoopCallbackLine)(int32_t y) {
+#ifdef USE_KEY_MATRIX
+  // Matrix key scan only on targets with a real key matrix. On Murmulator
+  // (PICOMPUTER_MAX) the RP_MAX matrix pins overlap the TFT pins (6=CS, 9=BL,
+  // 8=RESET), so scanning would drag them low and kill the display in runtime.
   zx_keyscan_row();
+#endif
 }
 
 void __not_in_flash_func(ZxRenderLoopCallbackMenu)(bool state) {
@@ -228,6 +251,9 @@ void __not_in_flash_func(main_loop)() {
 
     if (c++ & 1) {
       tuh_task();
+#ifdef USE_PS2_KBD
+      ps2kbd.tick();
+#endif
       process_joystick();
     }
     else {
@@ -256,13 +282,22 @@ void __not_in_flash_func(main_loop)() {
 }
 
 int main() {
+  gpio_init(LED_PIN);
+  gpio_set_dir(LED_PIN, GPIO_OUT);
+  // Beacon: 3x slow blink = reached main()
+  blink_led(3, 200, 200);
+
   pico_set_core_voltage();
+  // Beacon: 1x rapid blink = core voltage set
+  blink_led(1, 50, 50);
 
   // Try to use the general settings for video and audio defaults
   // This will start up the SD card before the system frequency is decided
   ZxSpectrumSettingValues settings;
   zxSpectrumSettings.load(&settings);
-  setZxSpectrumVideoDriver((zx_spectrum_video_driver_enum_t)settings.videoDriverDefault);  
+  // Beacon: 1x blink = settings loaded
+  blink_led(1, 100, 100);
+  setZxSpectrumVideoDriver((zx_spectrum_video_driver_enum_t)settings.videoDriverDefault);
 
 #ifdef USE_KEY_MATRIX
   // Initialise the keyboard scan
@@ -273,12 +308,19 @@ int main() {
   // Not that the following sets the system clock
   ZxSpectrumVideoInit();
 
+  // Beacon: 5x slow pulse = survived ZxSpectrumVideoInit()
+  blink_led(5, 500, 500);
+
   // setup_default_uart();
 
   tuh_hid_app_startup();
 
   //Initialise I/O
   stdio_init_all();
+
+#if defined(USE_PS2_KBD)
+  ps2kbd.init_gpio(); // pio1, SM ?
+#endif
 
   gpio_init(LED_PIN);
   gpio_set_dir(LED_PIN, GPIO_OUT);
@@ -329,6 +371,9 @@ int main() {
 
   if (sdCard0.mount()) {
 
+    // DIAG: SD mount succeeded -> 2 slow blips (300/300)
+    blink_led(2, 300, 300);
+
     // Create folders on the SD card if they are missing
     picoRootWin.initialise();
 
@@ -339,6 +384,10 @@ int main() {
     bool isKiosk = zxSpectrumKisok.isKiosk();
     keyboard1.setKiosk(isKiosk);
     keyboard2.setKiosk(isKiosk);
+  }
+  else {
+    // DIAG: SD mount failed -> 1 long slow blip (600/600)
+    blink_led(1, 600, 600);
   }
 
   showMenu = false;

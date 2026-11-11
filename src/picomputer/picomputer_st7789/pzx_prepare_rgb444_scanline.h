@@ -28,6 +28,15 @@ void __not_in_flash_func(pzx_send_rgb444_frame)(
   uint8_t borderColor
 );
 
+void __not_in_flash_func(pzx_send_rgb444_scanline_cobra80)(
+  PIO pio,
+  uint sm,
+  uint32_t y,
+  uint32_t frame,
+  uint8_t* vram,
+  uint8_t borderColor
+);
+
 #ifdef __cplusplus
 }
 #endif

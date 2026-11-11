@@ -43,7 +43,9 @@
 #include "ZxSpectrumAudioDriver.h"
 #include "ZxSpectrumVideoDriver.h"
 
+#ifndef VREG_VSEL
 #define VREG_VSEL VREG_VOLTAGE_1_20
+#endif
 
 #define LED_PIN 25
 

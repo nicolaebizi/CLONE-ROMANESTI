@@ -87,7 +87,16 @@ static inline void st7789_start_pixels(PIO pio, uint sm) {
 }
 
 void st7789_init(PIO pio, uint sm) {
-    
+#ifdef LCD_PIN_RESET
+    // Optional hardware reset pulse before the init sequence
+    gpio_init(LCD_PIN_RESET);
+    gpio_set_dir(LCD_PIN_RESET, GPIO_OUT);
+    gpio_put(LCD_PIN_RESET, 0);
+    sleep_ms(10);
+    gpio_put(LCD_PIN_RESET, 1);
+    sleep_ms(120);
+#endif
+
     uint offset = pio_add_program(pio, &st7789_lcd_program);
     st7789_lcd_program_init(pio, sm, offset, LCD_PIN_DIN, LCD_PIN_CLK, SERIAL_CLK_DIV, 8);
 

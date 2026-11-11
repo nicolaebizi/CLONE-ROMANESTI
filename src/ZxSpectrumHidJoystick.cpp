@@ -78,6 +78,8 @@ uint8_t ZxSpectrumHidJoystick::getjoystate(void * ptr) {
 
   joy |= (values->buttons & 0x0E)<<3;   // 4 Button joy | |3|2|1|.|DDDD|
   joy |= (values->buttons &  1)<<7;     // 4 Button joy |0| | | |.|DDDD|
+  // SNES-style shoulder buttons (L/R and any button >= bit4) also trigger fire
+  if (values->buttons & 0xFFFFFFF0u) joy |= JOY_FIRE;
 
   return joy;
 }

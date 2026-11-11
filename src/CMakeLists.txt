@@ -3,6 +3,43 @@
 
 include_directories(${CMAKE_CURRENT_LIST_DIR})
 
+########################################################################
+# Optional Amstrad +3B ROM set used when building the +3 enabled target.
+# The ROMs stay in the repository asset directory; CMake emits the C
+# header only into the build tree. The directory comes either from an
+# explicit -DZX_PLUS3_ROM_DIR=... or, automatically, when the board is
+# pico_plus3. Every other board (pico, pico2, ...) builds exactly as
+# before and never sees plus3_roms.h.
+########################################################################
+option(ZX_PLUS3_ROMS "Embed the +3B ROM set on any board" OFF)
+set(ZX_PLUS3_ROM_DIR "" CACHE PATH "Directory with plus3b_0.rom through plus3b_3.rom")
+if ((NOT ZX_PLUS3_ROM_DIR) AND ((ZX_PLUS3_ROMS) OR (${PICO_BOARD} STREQUAL "pico_plus3")))
+  set(ZX_PLUS3_ROM_DIR "${CMAKE_CURRENT_LIST_DIR}/../roms/plus3b")
+endif()
+if (ZX_PLUS3_ROM_DIR)
+  set(ZX_PLUS3_ROM_HEADER "${CMAKE_CURRENT_BINARY_DIR}/plus3_roms.h")
+  file(WRITE "${ZX_PLUS3_ROM_HEADER}" "#pragma once\n#include <stdint.h>\n")
+  foreach(page RANGE 0 3)
+    set(rom_file "${ZX_PLUS3_ROM_DIR}/plus3b_${page}.rom")
+    if (NOT EXISTS "${rom_file}")
+      message(FATAL_ERROR "Missing +3 ROM page: ${rom_file}")
+    endif()
+    file(SIZE "${rom_file}" rom_size)
+    if (NOT rom_size EQUAL 16384)
+      message(FATAL_ERROR "+3 ROM page ${rom_file} must be exactly 16 KiB")
+    endif()
+    file(READ "${rom_file}" rom_hex HEX)
+    string(REGEX REPLACE "([0-9A-Fa-f][0-9A-Fa-f])" "0x\\1," rom_bytes "${rom_hex}")
+    file(APPEND "${ZX_PLUS3_ROM_HEADER}"
+      "static const uint8_t zx_plus3_rom_${page}[0x4000] = {${rom_bytes}};\n")
+  endforeach()
+  # Make the generated header and the enable flag visible to every target
+  # built in this directory and its subdirectories (vga, hdmi, picomputer,
+  # picovga) - they all compile ZxSpectrum.cpp.
+  include_directories("${CMAKE_CURRENT_BINARY_DIR}")
+  add_compile_definitions(ZX_PLUS3_ROM_AVAILABLE=1)
+endif()
+
 set(zxspectrum_st7789_lcd_src
   ${CMAKE_CURRENT_LIST_DIR}/ZxSt7789LcdRenderLoop.cpp
   ${CMAKE_CURRENT_LIST_DIR}/picomputer/picomputer_st7789/pzx_prepare_rgb444_scanline.cpp # TODO Move this file
@@ -34,6 +71,8 @@ set(zxspectrum_common_src
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumDualJoystick.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumNespadJoystick.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrum.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumHcFdc.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/CobraFloppy.cpp
   ${CMAKE_CURRENT_LIST_DIR}/QuickSave.cpp
   ${CMAKE_CURRENT_LIST_DIR}/PulseProc.cpp
   ${CMAKE_CURRENT_LIST_DIR}/PulseProcTone.cpp
@@ -66,6 +105,8 @@ set(zxspectrum_common_src
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumFileLoop.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumAy.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumMenu.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/BootSwap.cpp # Boot manager swap gate (RP2350 active, RP2040 stub)
+  ${CMAKE_CURRENT_LIST_DIR}/CobraDiskFile.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumFatSpiExists.cpp
   ${CMAKE_CURRENT_LIST_DIR}/PicoOnScreenKeyboard.cpp
 )

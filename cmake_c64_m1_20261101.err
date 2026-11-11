@@ -1,0 +1,16 @@
+PICO_SDK_PATH is /Users/nicolaemuntean/pico-sdk
+Target board (PICO_BOARD) is 'pico2'.
+Using board configuration from /Users/nicolaemuntean/pico-sdk/src/boards/include/boards/pico2.h
+Auto-converting non-specific PICO_PLATFORM='rp2350' to 'rp2350-arm-s'
+Defaulting platform (PICO_PLATFORM) to 'rp2350-arm-s' based on PICO_BOARD setting.
+Detected GCC so defaulting PICO_COMPILER to `pico_arm_cortex_m33_gcc`
+Configuring toolchain based on PICO_COMPILER 'pico_arm_cortex_m33_gcc'
+Defaulting PICO_GCC_TRIPLE to 'arm-none-eabi'
+Build type is Release
+Using picotool from /opt/homebrew/bin/picotool
+TinyUSB available at /Users/nicolaemuntean/pico-sdk/lib/tinyusb/hw/bsp/rp2040; enabling build support for USB.
+BTstack available at /Users/nicolaemuntean/pico-sdk/lib/btstack
+cyw43-driver available at /Users/nicolaemuntean/pico-sdk/lib/cyw43-driver
+mbedtls available at /Users/nicolaemuntean/pico-sdk/lib/mbedtls
+lwIP available at /Users/nicolaemuntean/pico-sdk/lib/lwip
+C library type is newlib

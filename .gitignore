@@ -1,6 +1,14 @@
 **/*.bak
 jsw.h
 ljm.h
+.vscode
+
+# Build directories and artifacts
+_build*/
+build*/
 build*/**
 temp*/**
-.vscode
+final_build*/
+uf2_*/
+*.log
+.DS_Store
