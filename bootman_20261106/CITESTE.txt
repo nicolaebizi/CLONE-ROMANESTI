@@ -1,7 +1,0 @@
-Boot Manager v0.3.1 - pachet curat de test (2026-11-06)
- bootman-murmulator-RP2350-VGA-v0.3.1.uf2 -> Pico 2 (RP2350), browser pe VGA
- bootman-murmulator-RP2040-v0.3.1.uf2     -> Pico 1 (RP2040)
- bootman-murmulator-HDMI-v0.3.1.uf2       -> varianta HDMI
- SD_TEMPLATE/                              -> copie pe cardul SD asa cum e (pico1/, pico2/, sys/)
-Test: T1 pornire -> browser pe VGA; T2 flash c64_rp2350.bin din pico2/ -> repornire in C64 (test fix rewind f_lseek); T3 din firmware: -> Boot Manager -> flash alt firmware; T4 flash m1p2-TftIli9341I2sPs2.uf2 de pe SD -> ZX pe TFT. La orice esec: power-cycle (slot 0 intact).
-Versiunile v0.1/v0.2/v0.3 vechi raman in folderele lor - nu le folositi.
