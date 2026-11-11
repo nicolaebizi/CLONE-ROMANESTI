@@ -34,13 +34,13 @@ The firmware now supports the following machine types (from `src/ZxSpectrum.h`):
 | 6 | Amstrad +3B | Shown when +3 ROMs are available |
 | 7 | TIM S Plus | Romanian clone (RP2350 only) |
 | 8 | CUB-Z | Romanian clone, CP/M machine |
-| 9 | HC88 | Romanian clone (RP2350 only) |
+| 9 | HC88 | Romanian clone |
 
 ## Romanian clones
 * **TIM S Plus** (RP2350 only): boot by mounting an EDSK image from the SD card folder `zxspectrum/disks/TIMS PLUS/` via menu D rows 8/9; the reset-menu entry is key 7; the boot menu keys 1-6 select among the border colours defined by the manual: 1 = blue (CP/M), 2 = red (+2 + IF1), 3 = violet (+3).
-* **HC88** (RP2350 only): disk menu D rows 12/13, quick keys C/D, images from `zxspectrum/disks/HC88/`; the reset-menu entry is key 9.
+* **HC88**: disk menu D rows 12/13, quick keys C/D, images from `zxspectrum/disks/HC88/`; the reset-menu entry is key 9 (available on RP2040 too; the main RAM is shared with the base pool, only the 16K VRAM is extra).
 * **CUB-Z**: disk menu D rows 10/11, quick keys A/B.
-* Note: Pico 1 / RP2040 builds exclude TIM S Plus and HC88 (not enough RAM).
+* Note: Pico 1 / RP2040 builds exclude TIM S Plus (208K extra system RAM does not fit RP2040); HC88 is available on both.
 
 ## Updates
 05/10/25

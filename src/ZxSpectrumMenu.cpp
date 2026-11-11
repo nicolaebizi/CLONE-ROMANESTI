@@ -17,7 +17,7 @@
 #include "ZxSpectrumVideoDriver.h"
 #include "PicoCoreVoltage.h"
 #include "CobraDiskFile.h"
-#ifdef PICO_RP2350
+#if PICO_RP2350
 #include "BootSwap.h"
 #endif
 
@@ -131,12 +131,12 @@ void ZxSpectrumMenu::setWizLayout(int32_t margin, int32_t cols1, int32_t cols2, 
     _choosePlus3DiskA.move(0, 0, _wizCols, _choosePlus3DiskA.wh());
     _choosePlus3DiskB.move(0, 0, _wizCols, _choosePlus3DiskB.wh());
 #endif
-#ifdef PICO_RP2350
+#if PICO_RP2350
     _chooseTimsDiskA.move(0, 0, _wizCols, _chooseTimsDiskA.wh());
     _chooseTimsDiskB.move(0, 0, _wizCols, _chooseTimsDiskB.wh());
+#endif
     _chooseHc88DiskA.move(0, 0, _wizCols, _chooseHc88DiskA.wh());
     _chooseHc88DiskB.move(0, 0, _wizCols, _chooseHc88DiskB.wh());
-#endif
     _reset.move(0, 0, _wizCols, _reset.wh());
    _cobra.move(0, 0, _wizCols, _cobra.wh());
    _chooseCobraDisk.move(0, 0, _wizCols, _chooseCobraDisk.wh());
@@ -202,11 +202,12 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _chooseSnap(&_wizUtils, sdCard, &_pathSnaps, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
 
   _hcDisk(0, 0, _wizCols,
-#ifdef PICO_RP2350
-    // Rows for the RP2350-only TIM S Plus and HC88 mount entries and the two
-    // CUB-Z drives
+#if PICO_RP2350
+    // Rows for the RP2350-only TIM S Plus mount entry and the two CUB-Z
+    // drives (plus the HC88 rows present on every platform)
     13,
 #else
+    // HC88 + CUB-Z mount rows after the HC2000/+3 rows
     10,
 #endif
     _menuRowsPerItem),
@@ -230,7 +231,7 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _hdisB(0),
   _hcMountA(-1),
   _hcMountB(-1),
-#ifdef PICO_RP2350
+#if PICO_RP2350
   // TIM S Plus drive mount (disk menu quick keys 8/9; RP2350 only):
   // dedicated image folder zxspectrum/disks/TIMS PLUS (NOT the hc2000 dir).
   _pathDisksTims(&_pathDisks, "TIMS PLUS"),
@@ -242,8 +243,9 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _timsB(0),
   _timsMountA(-1),
   _timsMountB(-1),
-  // ICE Felix HC88 disk chooser (same chooser machinery as TIMS PLUS,
-  // RP2350 only): dedicated SD folder zxspectrum/disks/HC88 (auto-created
+#endif
+  // ICE Felix HC88 disk chooser (same chooser machinery as TIMS PLUS):
+  // dedicated SD folder zxspectrum/disks/HC88 (auto-created
   // at menu init). Phase 2 mounts into hcFdc() drives 0/1.
   _pathDisksHc88(&_pathDisks, "HC88"),
   _hc88DiskAOp("Mount HC88 drive A"),
@@ -254,7 +256,6 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _hc88B(0),
   _hc88MountA(-1),
   _hc88MountB(-1),
-#endif
   _pathDisksCubz(&_pathDisks, "CUBZ"),
   _cubzDiskAOp("CUB-Z drive A"),
   _cubzDiskBOp("CUB-Z drive B"),
@@ -265,12 +266,13 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _audioOptions(0, 0, _wizCols, 6, _menuRowsPerItem),
 
   _reset(0, 0, _wizCols,
-#ifdef PICO_RP2350
-    // Two extra rows for the RP2350-only TIM S Plus and HC88 reset entries
-    // (the list scrolls anyway)
+#if PICO_RP2350
+    // One extra row for the RP2350-only TIM S Plus reset entry
+    // (the list scrolls anyway; HC88 is present on every platform)
     9 * SZ_MENU_SEP,
 #else
-    7 * SZ_MENU_SEP,
+    // 48K/128K/Turbo/HC2000/CoBra/+3/CUB-Z/HC88
+    8 * SZ_MENU_SEP,
 #endif
     _menuRowsPerItem),
   _reset48kOp("Reset 48K ZX Spectrum"),
@@ -278,10 +280,10 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _resetTurboOp("Reset TURBO-SPECTRUM"),
   _resetHc2000Op("Reset HC2000"),
   _resetCobraOp("Reset CoBra 1"),
-#ifdef PICO_RP2350
+#if PICO_RP2350
   _resetTimsOp("Reset TIM S Plus"),
-  _resetHc88Op("Reset HC88"),
 #endif
+  _resetHc88Op("Reset HC88"),
   _resetCubzOp("Reset CUB-Z"),
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   _resetPlus3Op("Reset ZX Spectrum +3"),
@@ -463,10 +465,10 @@ ZxSpectrumMenu::ZxSpectrumMenu(
       case ZxSpectrumHc2000: m = "HC2000" ; break;
       case ZxSpectrumCobra: m = "CoBra 1" ; break;
       case ZxSpectrumPlus3: m = "ZX Spectrum +3" ; break;
-#ifdef PICO_RP2350
+#if PICO_RP2350
       case ZxSpectrumTimsPlus: m = "TIM S Plus" ; break;
-      case ZxSpectrumHc88: m = "HC88" ; break;
 #endif
+      case ZxSpectrumHc88: m = "HC88" ; break;
       case ZxSpectrumCubz: m = "CUB-Z" ; break;
       default: m = "" ; break;
     }
@@ -681,17 +683,17 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   // Verified lesson (LESSONS.md): reset submenu key k6 resets ZX Spectrum +3.
   _reset.addOption(_resetPlus3Op.addQuickKey(&_k6));
 #endif
-#ifdef PICO_RP2350
+#if PICO_RP2350
   // TIM S Plus (boot-only, RP2350 only): the free quick key in the reset
   // submenu (k1-k5/k6 +3 already taken; the entry scrolls into view).
   // Disk mounting is NOT here: it lives in the HC2000 disk menu below.
   _reset.addOption(_resetTimsOp.addQuickKey(&_k7));
-  _reset.addOption(_resetCubzOp.addQuickKey(&_k8));
-  // ICE Felix HC88 (RP2350 only): after the CUB-Z entry, last free quick
-  // key (k9). Phase 1 is machine type + memory map + VRAM video only;
-  // disk mounts live in the HC2000 disk menu below.
-  _reset.addOption(_resetHc88Op.addQuickKey(&_k9));
 #endif
+  _reset.addOption(_resetCubzOp.addQuickKey(&_k8));
+  // ICE Felix HC88: after the CUB-Z entry, quick key k9. Phase 1 is machine
+  // type + memory map + VRAM video only; disk mounts live in the HC2000
+  // disk menu below.
+  _reset.addOption(_resetHc88Op.addQuickKey(&_k9));
   _resetCubzOp.toggle([=]() {
     _snapName.clear();
     _zxSpectrum->reset(ZxSpectrumCubz);
@@ -717,12 +719,13 @@ ZxSpectrumMenu::ZxSpectrumMenu(
     _wiz.pop(true);
   });
 
-#ifdef PICO_RP2350
+#if PICO_RP2350
   _resetTimsOp.toggle([=]() {
     _snapName.clear();
     _zxSpectrum->reset(ZxSpectrumTimsPlus);
     _wiz.pop(true);
   });
+#endif
 
   _resetHc88Op.toggle([=]() {
     _snapName.clear();
@@ -730,6 +733,7 @@ ZxSpectrumMenu::ZxSpectrumMenu(
     _wiz.pop(true);
   });
 
+#if PICO_RP2350
   // TIM S Plus disk mounts (phase 2, RP2350 only): the same SD chooser
   // machinery as the HC2000 chooser, but pointed at the dedicated folder
   // zxspectrum/disks/TIMS PLUS (created at menu init). Drive A = FDC
@@ -821,7 +825,7 @@ ZxSpectrumMenu::ZxSpectrumMenu(
       true);
   });
 
-#ifdef PICO_RP2350
+#if PICO_RP2350
   // Boot Manager: flash /sys/bootman_rp2350.bin into slot 0 and reboot.
   // Two-step confirm (same pattern as System > Boot select); success never
   // returns (watchdog reboot into the boot manager browser). No quick key.
@@ -941,7 +945,7 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _hcDisk.addOption(_plus3DiskAOp.addQuickKey(&_k6));
   _hcDisk.addOption(_plus3DiskBOp.addQuickKey(&_k7));
 #endif
-#ifdef PICO_RP2350
+#if PICO_RP2350
   // TIM S Plus disk mounts (phase 2, RP2350 only): last rows of the disk
   // menu ("D. HC2K..." -> Disk images), quick keys k8/k9.
   // k8 = drive A (FDC unit 0), k9 = drive B (FDC unit 1).
@@ -972,8 +976,7 @@ ZxSpectrumMenu::ZxSpectrumMenu(
       _wiz.pop(true);
     };
   }
-#ifdef PICO_RP2350
-  // ICE Felix HC88 disk rows 12/13 (RP2350 only, quick keys C/D, reusing
+  // ICE Felix HC88 disk rows 12/13 (quick keys C/D, reusing
   // the shared _kC/_kD matchers): the same chooser + mount machinery as the
   // TIMS PLUS rows, pointed at the dedicated folder zxspectrum/disks/HC88
   // (auto-created at menu init). Drive A = FDC unit 0, drive B = FDC unit 1
@@ -1045,7 +1048,6 @@ ZxSpectrumMenu::ZxSpectrumMenu(
 
   _chooseHc88DiskA.onRefreshDisplay = [=]() { _hcDisk.repaint(); };
   _chooseHc88DiskB.onRefreshDisplay = [=]() { _hcDisk.repaint(); };
-#endif
   _hcDisk.enableQuickKeys();
 
   _hcDiskAOp.toggle([=]() {
@@ -1494,7 +1496,7 @@ void ZxSpectrumMenu::initialise() {
   _pathDisksHc2000.createFolders(_sdCard);
   _pathDisksBasic.createFolders(_sdCard);
   _pathDisksCubz.createFolders(_sdCard);
-#ifdef PICO_RP2350
+#if PICO_RP2350
   _pathDisksTims.createFolders(_sdCard);
   // ICE Felix HC88: auto-create zxspectrum/disks/HC88 at menu init, same
   // pattern as the TIMS PLUS folder above.

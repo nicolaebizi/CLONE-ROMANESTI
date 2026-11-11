@@ -40,7 +40,8 @@ enum ZxSpectrumType {
   ZxSpectrumTimsPlus,
   // ICE Felix HC-88 (9th computer; phase 1: machine type + memory map +
   // standard 32-col video from the separate VRAM + reset-menu entry).
-  // RP2350-gated like the TIM machine; no FDC and no hires mode this phase.
+  // Enabled on RP2040 too (the main RAM is shared bank 0-3 of _RAM; only the
+  // 16K VRAM is extra). No FDC and no hires mode this phase.
   ZxSpectrumHc88,
   // ICE Felix CUB-Z (8th computer): CP/M machine, 64K RAM + 16K video RAM
   ZxSpectrumCubz
@@ -157,14 +158,15 @@ private:
   volatile uint32_t _rd2FFD = 0; // $2FFD MSR (FDC main status) reads
   volatile uint32_t _rdCFD  = 0; // $0CFD (8255 port C) reads
   volatile uint32_t _rdPB   = 0; // $0EFD + $0FFD reads combined
-  volatile uint32_t _rdFE   = 0; // $FE (ULA keyboard) reads
-  // ICE Felix HC88 (phase 1, RP2350 only; reference fuse machines/hc88.c):
+  volatile uint32_t _rdFE = 0; // $FE (ULA keyboard) reads
+#endif
+  // ICE Felix HC88 (phase 1; reference fuse machines/hc88.c):
   // the 64K main RAM is the low half of the shared base _RAM pool (banks
   // 0-3 of eight being always allocated and memset on every machine reset;
   // only one machine type is live at a time) plus a strictly separate 16K
   // VRAM and the 16K motherboard ROM (hc88_rom.h). Keeping main RAM inside
-  // the base pool avoids the independent RP2350 SRAM overflow a second
-  // private 64K pool would cause (linker measured; only the VRAM is new).
+  // the base pool means the only new RAM for HC88 is the 16K VRAM, which
+  // also fits the RP2040 builds.
   // _hc88Latch mirrors the write-only motherboard latch, partially decoded
   // by A7,A6,A0 = 1,0,1 ((port & 0xC1) == 0x81, fuse hc88.c:109 and
   // machines_periph.c:262). Bit semantics as implemented (fuse hc88.c):
@@ -187,7 +189,6 @@ private:
   volatile uint32_t _hc88VramWr = 0;   // byte writes landing in _hc88Vram via the HC88 write path
   volatile uint32_t _hc88Q0Wr = 0;     // writes landing in Q0 RAM beneath the ROM overlay
   volatile uint8_t _hc88LatchLast = 0; // last value written to the motherboard latch
-#endif
   bool _ear;
   uint32_t _earInvert;
   uint32_t _earDc;
@@ -346,6 +347,7 @@ private:
       *(memaddr(address)) = value;
       return;
     }
+#endif
     // HC88 writes (fuse machines/hc88.c:56-92). Sub-16K quadrant map, so
     // only Q0 ($0000-$3FFF) needs special handling; Q1-Q3 are plain RAM /
     // VRAM reads+writes through the CPU page table (applyHc88Map):
@@ -369,7 +371,6 @@ private:
       *(memaddr(address)) = value;
       return;
     }
-#endif
     if (address < 0x4000) {
       // Turbo Spectrum: $0000-$3FFF is ROM only while FE_CFG=00. After the
       // boot switches to 64K (20) or Spectrum (60) mode it is RAM and must
@@ -429,6 +430,7 @@ private:
       }
       return 0xFF;
     }
+#endif
     // HC88 reads (fuse hc88.c:94-101 + machines_periph.c:257-260): the FDC
     // ports are decoded EXACTLY on the low byte (periph mask 0x00FF) - $DD
     // is the i8272 main status register, $DF the data (read) port and $E7
@@ -445,7 +447,6 @@ private:
         default: return 0xFF;
       }
     }
-#endif
     if (!(address & 0x0001)) {
 #if PICO_RP2350
       // fix3 phase 2: count $FE (ULA keyboard) reads in TIM mode only.
@@ -610,6 +611,7 @@ inline void writeIO(uint16_t address, uint8_t value)
       timsOpPush(address, value);
       return;
     }
+#endif
     // HC88 odd-port writes (fuse hc88.c:103-112): the i8272 ports use an
     // exact low-byte decode (periph mask 0x00FF, machines_periph.c:258-260)
     // - $DF is the FDC data (write) port, $E7 the control latch
@@ -634,7 +636,6 @@ inline void writeIO(uint16_t address, uint8_t value)
       }
       return;
     }
-#endif
     if (_type == ZxSpectrumHc2000) {
       // HC2000: every OUT to a port with A0=0 and A7=0 writes the port 7E
       // latch (D0 = 16K ROM half, D1 = map ROM at $E000-$FFFF, D2 = lock).
@@ -739,23 +740,19 @@ inline void writeIO(uint16_t address, uint8_t value)
   inline uint8_t readOpcode(uint16_t address) {
     if (_type == ZxSpectrumHc2000 && (address == 0x0008 || address == 0x1708))
       _hcIf1Shadow = true;
-#if PICO_RP2350
     else if (_type == ZxSpectrumHc88 && (_hc88Latch & 1) && !_hc88If1Paged &&
              ((address & 0xFFF8) == 0x0008 || (address & 0xFFF8) == 0x1708)) {
       _hc88If1Paged = true;
       applyHc88Map();
     }
-#endif
     const uint8_t value = readByte(address);
     if (_type == ZxSpectrumHc2000 && address == 0x0700)
       _hcIf1Shadow = false;
-#if PICO_RP2350
     else if (_type == ZxSpectrumHc88 && _hc88If1Paged &&
              (address & 0xFFF8) == 0x0700) {
       _hc88If1Paged = false;
       applyHc88Map();
     }
-#endif
     return value;
   }
 
@@ -846,8 +843,8 @@ inline void writeIO(uint16_t address, uint8_t value)
   void applyPlus3Map();
 #if PICO_RP2350
   void applyTimsMap();
-  void applyHc88Map();
 #endif
+  void applyHc88Map();
   // 48K images run on the TURBO-SPECTRUM clone while that machine is selected
   inline ZxSpectrumType type48(ZxSpectrumType type) {
     return (type == ZxSpectrum48k && _type == ZxSpectrumTurbo) ? ZxSpectrumTurbo : type;
@@ -932,12 +929,12 @@ public:
     // clear) the console is written there through the VRAM window too, so
     // showing the system page mapped at $4000 left the CP/M screen black.
     if (_type == ZxSpectrumTimsPlus) return (uint8_t*)_timsVram;
+#endif
     // HC88: the standard 32-col Spectrum raster always reads the separate
     // 16K VRAM (fuse hc88.c:73 memory_current_screen = 4; the video never
     // switches to a main-RAM bank). Bit 4 of the latch (hires) is stored
     // but not decoded this phase.
     if (_type == ZxSpectrumHc88) return (uint8_t*)_hc88Vram;
-#endif
     // HC2000: VideoBase (HcMemory.cs) follows latch 7E bit 3 — CP/M shows the
     // screen from physical 0xC000 (_RAM[0]), otherwise physical 0x4000 (_RAM[5]).
     if (_type == ZxSpectrumHc2000) return (uint8_t*)&_RAM[(_hcLatch7e & 8) ? 0 : 5];
@@ -986,12 +983,12 @@ public:
   inline volatile uint32_t timsRdCfd()  { return _rdCFD; }
   inline volatile uint32_t timsRdPb()   { return _rdPB; }
   inline volatile uint32_t timsRdFe()   { return _rdFE; }
+#endif
   // HC88 diag counter accessors (strippable later).
   inline volatile uint32_t hc88LatchWr() { return _hc88LatchWr; }
   inline volatile uint32_t hc88VramWr() { return _hc88VramWr; }
   inline volatile uint32_t hc88Q0Wr() { return _hc88Q0Wr; }
   inline volatile uint8_t hc88LatchLast() { return _hc88LatchLast; }
-#endif
   inline uint8_t* memPtr(uint32_t i) { return (unsigned char*)&_RAM[i]; }
   inline uint32_t flipsPerFrame() { return _fcf; }
   void reset(ZxSpectrumType type);

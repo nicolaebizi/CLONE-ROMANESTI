@@ -92,7 +92,7 @@ private:
   PicoOption _systemOp;
   PicoOption _quickSaveOp;
   PicoOption _cobraOp;
-#ifdef PICO_RP2350
+#if PICO_RP2350
   // "Boot Manager" flash-from-SD option (BootSwap), RP2350 only: swaps
   // /sys/bootman_rp2350.bin into flash slot 0 and reboots. No quick key.
   PicoOption _bootManOp;
@@ -130,7 +130,7 @@ private:
   std::string _hcDiskNameB;
   int _hcMountA, _hcMountB;
 
-#ifdef PICO_RP2350
+#if PICO_RP2350
   // TIM S Plus disk drives A/B on the i8272 (fuse tims_fdc: units 0/1,
   // motor from $1FFD bit 3); images live in a dedicated folder of the
   // standard disks dir (zxspectrum/disks/TIMS PLUS). RP2350 only, like the
@@ -145,8 +145,9 @@ private:
   std::string _timsDiskNameA;
   std::string _timsDiskNameB;
   int _timsMountA, _timsMountB;
+#endif
 
-  // ICE Felix HC88 disk chooser rows 12/13 (RP2350 only; quick keys C/D):
+  // ICE Felix HC88 disk chooser rows 12/13 (quick keys C/D):
   // chooser in zxspectrum/disks/HC88, auto-created at menu init. Phase 2:
   // mounts into hcFdc() drive 0/1 (i8272, exact low-byte ports $DD/$DF/$E7).
   FatFsFilePath _pathDisksHc88;
@@ -159,7 +160,6 @@ private:
   std::string _hc88DiskNameA;
   std::string _hc88DiskNameB;
   int _hc88MountA, _hc88MountB;
-#endif
 
   // ICE Felix CUB-Z disk drives A/B (i8272 units 0/1), images in
   // zxspectrum/disks/CUBZ (IMG, DSK, EDSK; written back to the SD card).
@@ -183,12 +183,12 @@ private:
   PicoOptionText _resetTurboOp;
   PicoOptionText _resetHc2000Op;
   PicoOptionText _resetCobraOp;
-#ifdef PICO_RP2350
+#if PICO_RP2350
   // TIM S Plus reset entry (boot-only machine, RP2350 only)
   PicoOptionText _resetTimsOp;
-  // ICE Felix HC88 reset entry (phase 1: no FDC, no hires; RP2350 only)
-  PicoOptionText _resetHc88Op;
 #endif
+  // ICE Felix HC88 reset entry (phase 1: no FDC, no hires)
+  PicoOptionText _resetHc88Op;
   PicoOptionText _resetCubzOp;
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   PicoOptionText _resetPlus3Op;

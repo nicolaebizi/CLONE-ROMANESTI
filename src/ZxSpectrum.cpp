@@ -11,9 +11,9 @@
 // TIM-S Plus boot-only (RP2350 only): 2 KiB boot EPROM mirrored x8 into the
 // 16K low bank.
 #include "tims_boot_rom.h"
-// HC88 phase 1 (RP2350 only): the 16K motherboard ROM dump.
-#include "hc88_rom.h"
 #endif
+// HC88 phase 1: the 16K motherboard ROM dump.
+#include "hc88_rom.h"
 #ifdef ZX_PLUS3_ROM_AVAILABLE
 #include "plus3_roms.h"
 #endif
@@ -124,11 +124,11 @@ ZxSpectrum::ZxSpectrum(
   _timsControl(0x9b),
   _timsScroll(0),
   _wrVram(0), // diag counter starts at 0 once per power-on
+#endif
   // HC88 (phase 1): latch at 0 (fuse hc88_reset: /LOAD asserted, screen 0,
   // 256-pixel mode) and the IF1 shadow released.
   _hc88Latch(0),
   _hc88If1Paged(false),
-#endif
   _ear(false),
   _earInvert(0),
   _earDc(0),
@@ -180,14 +180,12 @@ void ZxSpectrum::transmute(ZxSpectrumType type) {
     _Z80.fetch_opcode = hcFetchOpcode;
     _Z80.reti = 0;
   }
-#if PICO_RP2350
   else if (type == ZxSpectrumHc88) {
     // HC88: opcode fetches arm / release the IF1 shadow-RAM latch
     // (fuse machines/hc88.c:114-124, decoded M1 ranges).
     _Z80.fetch_opcode = hcFetchOpcode;
     _Z80.reti = 0;
   }
-#endif
   else {
     _Z80.fetch_opcode = readByte;
     _Z80.reti = 0;
@@ -221,6 +219,7 @@ void ZxSpectrum::transmute(ZxSpectrumType type) {
       _timsPaging = _timsSecondary = _timsPc = _timsPa = _timsPb = _timsScroll = 0;
       _timsControl = 0x9b;
       break;
+#endif
     case ZxSpectrumHc88:
       // HC88 (fuse hc88_reset): latch = 0 (b0 clear -> the 16K motherboard
       // ROM visible at Q0 for reads, MOD1/MOD0 clear/LOCK off, hires off),
@@ -231,7 +230,6 @@ void ZxSpectrum::transmute(ZxSpectrumType type) {
       _hc88Latch = 0;
       _hc88If1Paged = false;
       break;
-#endif
     case ZxSpectrum128k:
     case ZxSpectrumPlus3:
     default:
@@ -341,6 +339,7 @@ void ZxSpectrum::applyTimsMap() {
   if (!(_timsPc & 1))
     setPageaddr(0, (uint8_t*)tims_boot_rom); // reads of $0000-$3FFF
 }
+#endif
 
 // HC88 memory map (fuse machines/hc88.c:56-92, followed literally), called
 // on every latch write and on every IF1 arming/unpage event:
@@ -385,7 +384,6 @@ void ZxSpectrum::applyHc88Map() {
     setPageaddr(0, (uint8_t*)&_RAM[0]); // b0 set: low RAM at Q0
   }
 }
-#endif
 
 void ZxSpectrum::reset(ZxSpectrumType type)
 {
@@ -406,11 +404,11 @@ void ZxSpectrum::reset(ZxSpectrumType type)
   // TIM-S Plus: FDC soft reset (drive A/B media stays mounted across resets,
   // like HC2000); the motor line off follows the reset $1FFD = 0.
   _hcFdc.setTimsMode(type == ZxSpectrumTimsPlus);
+#endif
   // HC88: FDC port map + idle state come up mastered-reset (command-ready,
   // RQM=1), per fuse hc88_fdc_reset(); mounted media stays; the $E7 control
   // latch is written by the HC88 BIOS via setHc88Latch().
   _hcFdc.setHc88Mode(type == ZxSpectrumHc88);
-#endif
   setPageaddr(1, (uint8_t*)&_RAM[5]);
   setPageaddr(2, (uint8_t*)&_RAM[2]);
   setPageaddr(3, (uint8_t*)&_RAM[0]);
@@ -424,14 +422,14 @@ void ZxSpectrum::reset(ZxSpectrumType type)
     memset(_timsRAM, 0, sizeof(_timsRAM));
     memset(_timsVram, 0, sizeof(_timsVram));
   }
+#endif
   // HC88: the shared base _RAM pool (including the HC88 main RAM in its
   // banks 0-3) is already memset above for every machine reset; zero the
   // separate 16K VRAM so the machine ROM executes against a deterministic
   // state.
-  else if (type == ZxSpectrumHc88) {
+  if (type == ZxSpectrumHc88) {
     memset(_hc88Vram, 0, sizeof(_hc88Vram));
   }
-#endif
   // HC2000: the Interface I shadow page gets the patched v2 ROM
   if (type == ZxSpectrumHc2000) loadIf1V2((uint8_t*)&_RAM[7]);
   // Turbo Spectrum: F5 config and its effective mapping reset to EEPROM mode
@@ -442,8 +440,8 @@ void ZxSpectrum::reset(ZxSpectrumType type)
   else if (type == ZxSpectrumPlus3) applyPlus3Map(); // Plus3 mode
 #if PICO_RP2350
   else if (type == ZxSpectrumTimsPlus) applyTimsMap(); // boot map after RST
-  else if (type == ZxSpectrumHc88) applyHc88Map(); // reset map: ROM at Q0, VRAM at Q1 (latch 0)
 #endif
+  else if (type == ZxSpectrumHc88) applyHc88Map(); // reset map: ROM at Q0, VRAM at Q1 (latch 0)
   _port254 = 0x20;  //0x30;
   _ay.reset();
   if (_keyboard1) _keyboard1->reset();
