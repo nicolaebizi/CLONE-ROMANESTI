@@ -16,6 +16,7 @@ pentru plăcile Murmulator 1 și Murmulator 2.
 | 6 | ZX Spectrum +3 | doar în build-urile cu ROM-uri +3 |
 | 7 | TIM-S Plus | doar pe RP2350 ( datorita memoriei mici la pico1!): boot EPROM original, disc sistem, CP/M 2.2 |
 | 8 | CUB-Z (ICE Felix) | monitor v1.4, 64K + 16K VRAM, i8272 cu DMA 8257, ecran 512×256, CP/M 2.2 |
+| 9 | HC88 (ICE Felix) | doar pe RP2350: clonă ZX românească, boot de pe HC88SYS.DSK/EDSK, tasta de reset 9 |
 
 ## Firmware gata compilat (`firmware/`)
 
@@ -45,6 +46,7 @@ SD:/zxspectrum/
     ├── TIMS PLUS/    TIM-S Plus (numele are spațiu)
     └── CUBZ/         CUB-Z: .dsk (EDSK) / .img
     └── plus3/        +3
+    └── HC88/         HC88: .dsk (DSK/EDSK)
 ```
 
 Meniul **D (HC2K,+3,TIMS PLUS,CUBZ)** montează dischetele. În listele de fișiere, tasta **5** reîncarcă
