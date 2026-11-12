@@ -65,32 +65,72 @@ conținutul cardului.
 | `tools/` | `td0_to_edsk.py` (Teledisk → EDSK, păstrează ID-urile și întrețeserea), `bin2h.py` (ROM → header C) |
 | `hosttest/` | harness care rulează nucleul emulatorului pe Mac/PC și salvează capturi de ecran |
 
-## Compilare
+## Compilare din surse (Pico 2 / RP2350)
 
-Sunt necesare Pico SDK, `arm-none-eabi-gcc` și CMake. Bibliotecile fruit-bat se clonează alături de
-`pico-zxspectrum`:
+Instrucțiunile de mai jos pornesc de la o clonare curată a acestui repository și construiesc
+firmware-ul VGA 640×480 cu sunet I2S pentru Murmulator 1 și Murmulator 2.
+
+### 1. Unelte necesare
+
+Pe Ubuntu/Debian:
 
 ```sh
-git clone https://github.com/fruit-bat/pico-hid-host
-git clone https://github.com/fruit-bat/pico-nespad
-git clone https://github.com/fruit-bat/pico-extras
-git clone https://github.com/fruit-bat/PicoDVI
-git clone https://github.com/pimoroni/pimoroni-pico
-git clone https://github.com/fruit-bat/pico-dvi-menu
-git clone https://github.com/fruit-bat/pico-emu-utils
+sudo apt update
+sudo apt install -y git cmake ninja-build build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi
+```
+
+Este necesar și Python 3 (folosit de unele unelte Pico SDK).
+
+### 2. Descarcă dependențele
+
+Rulează comenzile din directorul rădăcină al repository-ului, lângă directoarele
+`pico-zxspectrum/` și `firmware/`:
+
+```sh
+git clone https://github.com/fruit-bat/pico-hid-host.git
+git clone https://github.com/fruit-bat/pico-nespad.git
+git clone https://github.com/raspberrypi/pico-extras.git
+git clone --branch audio https://github.com/fruit-bat/PicoDVI.git
+git clone https://github.com/pimoroni/pimoroni-pico.git
+git clone https://github.com/fruit-bat/pico-dvi-menu.git
+git clone https://github.com/fruit-bat/pico-emu-utils.git
 git clone https://github.com/redcode/Z80.git
 git clone https://github.com/redcode/Zeta.git
 ```
 
-În `pimoroni-pico/drivers/fatfs/ffconf.h` trebuie setat `#define FF_USE_FIND 1`.
+PicoDVI trebuie clonat de pe ramura `audio`; aceasta furnizează interfața audio HDMI
+așteptată de sursele proiectului. Pico SDK este descărcat automat de CMake, la versiunea
+**2.1.1**, pentru a evita incompatibilitatea assembly din PicoDVI cu SDK 2.2.x.
+
+### 3. Configurează și compilează
+
+Din directorul rădăcină al repository-ului:
 
 ```sh
-cd pico-zxspectrum
-mkdir -p build/p2 && cd build/p2
-cmake -DPICO_COPY_TO_RAM=0 -DPICO_PLATFORM=rp2350-arm-s -DPICO_BOARD=pico2 ../..   # Pico 2
-# cmake -DPICO_COPY_TO_RAM=0 -DPICO_PLATFORM=rp2040 -DPICO_BOARD=pico ../..        # Pico 1
-make -j8 ZX-MURMULATOR_VGA_I2S_AUDIO_640x480x60Hz ZX-MURMULATOR2_VGA_I2S_AUDIO_640x480x60Hz ZxSpectrumMurmulatorTftIli9341I2sPs2
+export PICO_SDK_FETCH_FROM_GIT=1
+export PICO_EXTRAS_PATH="$PWD/pico-extras"
+
+cmake -S pico-zxspectrum -B pico-zxspectrum/build-pico2 -G Ninja \
+  -DPICO_COPY_TO_RAM=0 \
+  -DPICO_PLATFORM=rp2350-arm-s \
+  -DPICO_BOARD=pico2 \
+  -DPICO_SDK_FETCH_FROM_GIT_TAG=2.1.1
+
+cmake --build pico-zxspectrum/build-pico2 --target ZX-MURMULATOR_VGA_I2S_AUDIO_640x480x60Hz --parallel 2
+cmake --build pico-zxspectrum/build-pico2 --target ZX-MURMULATOR2_VGA_I2S_AUDIO_640x480x60Hz --parallel 2
 ```
+
+Fișierele `.uf2` rezultate se găsesc în subdirectoarele de build ale țintelor CMake.
+Pentru numele exacte ale fișierelor, caută `*.uf2` în `pico-zxspectrum/build-pico2/`.
+
+### 4. Build automat
+
+La fiecare push pe ramura `main`, GitHub Actions compilează automat cele două ținte VGA
+I2S pentru Pico 2. Configurația CI folosește aceleași versiuni de Pico SDK și PicoDVI
+ca instrucțiunile de mai sus.
+
+Pentru alte sisteme de operare, instalează echivalentele CMake, Ninja, Git și
+Arm GNU Toolchain înainte de a urma pașii 2–3.
 
 ## Surse și mulțumiri
 
