@@ -10,7 +10,7 @@ pentru plăcile Murmulator 1 și Murmulator 2.
 |---|---|---|
 | 1 | ZX Spectrum 48K | original fruit-bat |
 | 2 | ZX Spectrum 128K | original fruit-bat |
-| 3 | TURBO-SPECTRUM | porturi F5/CE/SM, ROM turbo |
+| 3 | TURBO-SPECTRUM | porturi F5/CE/SM, ROM turbo  WWW.COBRASOV.ORG |
 | 4 | HC-2000 (ICE Felix) | i8272, CP/M, Interface 1 |
 | 5 | CoBra 1 (Brașov) | placa de bază v0.2 rev 3.17e, interfață floppy v1.2 (Z80-CTC + 8272A), 80K / 80 caractere, Unified Boot + SYSTEM ROM 64K, CP/M, DEVIL     Meniu setare COBRA F1->C.|
 | 6 | ZX Spectrum +3 | doar în build-urile cu ROM-uri +3 |
