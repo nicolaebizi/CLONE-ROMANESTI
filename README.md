@@ -34,6 +34,9 @@ pe discul care apare (RPI-RP2 sau RP2350).
 
 Detalii despre fiecare calculator, taste, meniuri și limitări se găsesc în
 [`firmware/CITESTE-MA.md`](firmware/CITESTE-MA.md).
+## RELEASE 1 V 0.2
+Are in plus un meniu de incarcare ROM 16k in calculatorul 48k .Imaginile se pun in sd:/zxscpectrum/roms
+La repornirea placii calculatorul revine la basic original !
 
 ## Cardul SD
 
