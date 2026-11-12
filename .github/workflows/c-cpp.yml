@@ -3,7 +3,7 @@ name: CLONE-ROMANESTI CI
 on:
   push:
     branches: ["main"]
-    tags: ["PICO2-v*"]
+    tags: ["pico-v*-github"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
@@ -121,7 +121,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Publish new Pico 2 GitHub Release
-        if: startsWith(github.ref, 'refs/tags/PICO2-v')
+        if: startsWith(github.ref, 'refs/tags/pico-v')
         uses: softprops/action-gh-release@v2
         with:
           name: Murmulator Pico 2 ${{ github.ref_name }}
