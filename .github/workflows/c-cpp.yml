@@ -80,6 +80,10 @@ jobs:
           repository: redcode/Zeta
           path: CLONE-ROMANESTI/Zeta
 
+      - name: Enable FatFs directory search
+        run: |
+          sed -i 's/^#define FF_USE_FIND[[:space:]]\+0/#define FF_USE_FIND 1/' CLONE-ROMANESTI/pimoroni-pico/drivers/fatfs/ffconf.h
+
       - name: Install build tools
         run: |
           sudo apt-get update
