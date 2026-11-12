@@ -1,23 +1,97 @@
-name: C/C++ CI
+name: CLONE-ROMANESTI CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+  workflow_dispatch:
 
 jobs:
   build:
-
+    name: Build ${{ matrix.board_name }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - board_name: Pico 1 (RP2040)
+            pico_board: pico
+            pico_platform: rp2040
+          - board_name: Pico 2 (RP2350)
+            pico_board: pico2
+            pico_platform: rp2350-arm-s
 
     steps:
-    - uses: actions/checkout@v4
-    - name: configure
-      run: ./configure
-    - name: make
-      run: make
-    - name: make check
-      run: make check
-    - name: make distcheck
-      run: make distcheck
+      - name: Checkout CLONE-ROMANESTI
+        uses: actions/checkout@v4
+        with:
+          path: CLONE-ROMANESTI
+
+      - name: Checkout PicoDVI
+        uses: actions/checkout@v4
+        with:
+          repository: fruit-bat/PicoDVI
+          path: CLONE-ROMANESTI/PicoDVI
+
+      - name: Checkout pico-hid-host
+        uses: actions/checkout@v4
+        with:
+          repository: fruit-bat/pico-hid-host
+          path: CLONE-ROMANESTI/pico-hid-host
+
+      - name: Checkout pico-nespad
+        uses: actions/checkout@v4
+        with:
+          repository: fruit-bat/pico-nespad
+          path: CLONE-ROMANESTI/pico-nespad
+
+      - name: Checkout pico-dvi-menu
+        uses: actions/checkout@v4
+        with:
+          repository: fruit-bat/pico-dvi-menu
+          path: CLONE-ROMANESTI/pico-dvi-menu
+
+      - name: Checkout pico-emu-utils
+        uses: actions/checkout@v4
+        with:
+          repository: fruit-bat/pico-emu-utils
+          path: CLONE-ROMANESTI/pico-emu-utils
+
+      - name: Checkout pimoroni-pico
+        uses: actions/checkout@v4
+        with:
+          repository: pimoroni/pimoroni-pico
+          path: CLONE-ROMANESTI/pimoroni-pico
+
+      - name: Checkout Z80
+        uses: actions/checkout@v4
+        with:
+          repository: redcode/Z80
+          path: CLONE-ROMANESTI/Z80
+
+      - name: Checkout Zeta
+        uses: actions/checkout@v4
+        with:
+          repository: redcode/Zeta
+          path: CLONE-ROMANESTI/Zeta
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi
+
+      - name: Configure CMake
+        working-directory: CLONE-ROMANESTI/pico-zxspectrum
+        env:
+          PICO_SDK_FETCH_FROM_GIT: "1"
+          PICO_EXTRAS_FETCH_FROM_GIT: "1"
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DPICO_COPY_TO_RAM=0 \
+            -DPICO_PLATFORM=${{ matrix.pico_platform }} \
+            -DPICO_BOARD=${{ matrix.pico_board }}
+
+      - name: Build Murmulator targets
+        working-directory: CLONE-ROMANESTI/pico-zxspectrum
+        run: cmake --build build --target relevant --parallel 2
