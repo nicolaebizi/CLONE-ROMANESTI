@@ -106,3 +106,13 @@ jobs:
         run: |
           cmake --build build --target ZX-MURMULATOR_VGA_I2S_AUDIO_640x480x60Hz --parallel 2
           cmake --build build --target ZX-MURMULATOR2_VGA_I2S_AUDIO_640x480x60Hz --parallel 2
+
+      - name: Upload Pico 2 firmware UF2 files
+        uses: actions/upload-artifact@v4
+        with:
+          name: Murmulator-Pico2-VGA-I2S
+          path: |
+            CLONE-ROMANESTI/pico-zxspectrum/build/bin/vga/ZX-MURMULATOR_VGA_I2S_AUDIO_640x480x60Hz.uf2
+            CLONE-ROMANESTI/pico-zxspectrum/build/bin/vga/ZX-MURMULATOR2_VGA_I2S_AUDIO_640x480x60Hz.uf2
+          if-no-files-found: error
+          retention-days: 30
