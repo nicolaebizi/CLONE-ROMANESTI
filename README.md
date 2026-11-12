@@ -38,7 +38,8 @@ Detalii despre fiecare calculator, taste, meniuri și limitări se găsesc în
 Are in plus un meniu de incarcare ROM 16k in calculatorul 48k .Imaginile se pun in sd:/zxscpectrum/roms
 La repornirea placii calculatorul revine la basic original !
 
-## Cardul SD
+## Cardul SD   NU UITATI DE TASTA 5 REFRESH DUPA CE ATI PUS CU PC ALTE FISIERE PE CARD - IN FIECARE MENIU 
+  
 
 ```
 SD:/zxspectrum/
