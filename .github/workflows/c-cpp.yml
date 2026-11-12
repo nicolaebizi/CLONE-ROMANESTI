@@ -32,6 +32,10 @@ jobs:
           ref: audio
           path: CLONE-ROMANESTI/PicoDVI
 
+      - name: Patch PicoDVI for Pico SDK 2.2+
+        run: |
+          sed -i '1i #include "pico.h"' CLONE-ROMANESTI/PicoDVI/software/libdvi/tmds_encode.S
+
       - name: Checkout Pico Extras
         uses: actions/checkout@v4
         with:
