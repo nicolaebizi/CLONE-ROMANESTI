@@ -32,10 +32,6 @@ jobs:
           ref: audio
           path: CLONE-ROMANESTI/PicoDVI
 
-      - name: Patch PicoDVI for Pico SDK 2.2+
-        run: |
-          sed -i '1i #include "pico.h"' CLONE-ROMANESTI/PicoDVI/software/libdvi/tmds_encode.S
-
       - name: Checkout Pico Extras
         uses: actions/checkout@v4
         with:
@@ -98,8 +94,11 @@ jobs:
           cmake -S . -B build -G Ninja \
             -DPICO_COPY_TO_RAM=0 \
             -DPICO_PLATFORM=${{ matrix.pico_platform }} \
-            -DPICO_BOARD=${{ matrix.pico_board }}
+            -DPICO_BOARD=${{ matrix.pico_board }} \
+            -DPICO_SDK_FETCH_FROM_GIT_TAG=2.1.1
 
-      - name: Build Murmulator targets
+      - name: Build Murmulator VGA I2S firmware
         working-directory: CLONE-ROMANESTI/pico-zxspectrum
-        run: cmake --build build --target relevant --parallel 2
+        run: |
+          cmake --build build --target ZX-MURMULATOR_VGA_I2S_AUDIO_640x480x60Hz --parallel 2
+          cmake --build build --target ZX-MURMULATOR2_VGA_I2S_AUDIO_640x480x60Hz --parallel 2
