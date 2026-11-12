@@ -3,9 +3,13 @@ name: CLONE-ROMANESTI CI
 on:
   push:
     branches: ["main"]
+    tags: ["PICO2-v*"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -116,3 +120,12 @@ jobs:
             CLONE-ROMANESTI/pico-zxspectrum/build/bin/vga/ZX-MURMULATOR2_VGA_I2S_AUDIO_640x480x60Hz.uf2
           if-no-files-found: error
           retention-days: 30
+      - name: Publish new Pico 2 GitHub Release
+        if: startsWith(github.ref, 'refs/tags/PICO2-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Murmulator Pico 2 ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            CLONE-ROMANESTI/pico-zxspectrum/build/bin/vga/ZX-MURMULATOR_VGA_I2S_AUDIO_640x480x60Hz.uf2
+            CLONE-ROMANESTI/pico-zxspectrum/build/bin/vga/ZX-MURMULATOR2_VGA_I2S_AUDIO_640x480x60Hz.uf2
