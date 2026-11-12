@@ -102,6 +102,12 @@ PicoDVI trebuie clonat de pe ramura `audio`; aceasta furnizează interfața audi
 așteptată de sursele proiectului. Pico SDK este descărcat automat de CMake, la versiunea
 **2.1.1**, pentru a evita incompatibilitatea assembly din PicoDVI cu SDK 2.2.x.
 
+Activează căutarea directoarelor în FatFs (necesară pentru listarea fișierelor de pe SD):
+
+```sh
+sed -i 's/^#define FF_USE_FIND[[:space:]]\+0/#define FF_USE_FIND 1/' pimoroni-pico/drivers/fatfs/ffconf.h
+```
+
 ### 3. Configurează și compilează
 
 Din directorul rădăcină al repository-ului:
