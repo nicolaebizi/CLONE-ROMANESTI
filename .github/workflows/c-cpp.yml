@@ -15,9 +15,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - board_name: Pico 1 (RP2040)
-            pico_board: pico
-            pico_platform: rp2040
           - board_name: Pico 2 (RP2350)
             pico_board: pico2
             pico_platform: rp2350-arm-s
@@ -32,6 +29,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: fruit-bat/PicoDVI
+          ref: audio
           path: CLONE-ROMANESTI/PicoDVI
 
       - name: Checkout Pico Extras
