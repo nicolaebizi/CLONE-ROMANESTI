@@ -34,6 +34,12 @@ jobs:
           repository: fruit-bat/PicoDVI
           path: CLONE-ROMANESTI/PicoDVI
 
+      - name: Checkout Pico Extras
+        uses: actions/checkout@v4
+        with:
+          repository: raspberrypi/pico-extras
+          path: CLONE-ROMANESTI/pico-extras
+
       - name: Checkout pico-hid-host
         uses: actions/checkout@v4
         with:
@@ -85,7 +91,7 @@ jobs:
         working-directory: CLONE-ROMANESTI/pico-zxspectrum
         env:
           PICO_SDK_FETCH_FROM_GIT: "1"
-          PICO_EXTRAS_FETCH_FROM_GIT: "1"
+          PICO_EXTRAS_PATH: ${{ github.workspace }}/CLONE-ROMANESTI/pico-extras
         run: |
           cmake -S . -B build -G Ninja \
             -DPICO_COPY_TO_RAM=0 \
