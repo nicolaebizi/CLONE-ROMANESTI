@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 fruit-bat
+#pragma once
+
+#include <pico/stdlib.h>
+#include "PulseProc.h"
+#include <vector>
+#include <functional>
+
+class PulseProcTzxSelect : public PulseProc {
+private:
+  std::vector<uint16_t> _offsets;
+  std::function<void()> _clearOptions;
+  std::function<void(char *)> _addOption;
+  std::function<void()> _showOptions;
+public:
+
+  PulseProcTzxSelect();
+  
+  void init(PulseProc *next);
+  
+  virtual int32_t advance(
+    InputStream *is,
+    bool *pstate,
+    PulseProc **top
+  );
+  
+  int32_t offset(uint32_t choice);
+
+  // Free the offsets (clear() alone keeps their capacity)
+  void release() { std::vector<uint16_t>().swap(_offsets); }
+  
+  void optionHandlers(
+    std::function<void()> clearOptions,
+    std::function<void(const char *)> addOption,
+    std::function<void()> showOptions
+  ) {
+    _clearOptions = clearOptions; 
+    _addOption = addOption;
+    _showOptions = showOptions;
+  }
+};
