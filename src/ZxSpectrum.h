@@ -267,6 +267,16 @@ private:
   }
   
   inline uint8_t* memaddr(uint32_t address) {
+    // Custom 48K ROM (R menu option, 16K image loaded from zxspectrum/roms):
+    // while a user ROM is loaded, the 48K machine reads/fetches the whole
+    // $0000-$3FFF region from the RAM buffer instead of the built-in flash
+    // ROM page. The hot path pays exactly one pointer check; the 48K machine
+    // never re-pages Q0 (port $7FFD is 128K/+3 only) and never writes the
+    // low 16K, so the buffer cannot be corrupted from the emulated bus.
+    // Other machine types (128K/Turbo/HC2000/...) are untouched.
+    if (_customRom && _type == ZxSpectrum48k && address < 0x4000) {
+      return _customRom + address;
+    }
     // HC2000: while the Interface I v2 ROM occupies the shadow slot the CPU
     // reads the IF1 page over $0000-$3FFF (the full 16K lives in _RAM[7]),
     // except the key/board scratch ranges which come from _RAM[6].
@@ -827,6 +837,13 @@ inline void writeIO(uint16_t address, uint8_t value)
   void cobraWriteIO(uint16_t address, uint8_t value);
   
   uint8_t _RAM[8][1<<14];
+  // Custom 16K ROM image for the 48K machine (menu option R): heap buffer
+  // allocated from the SD-copying side when an image is loaded. Null by
+  // default -> the built-in flash ROM is used. No persistence across power
+  // cycles (the pointer is a plain member, never saved). Intentionally NOT
+  // freed or cleared on reset: a reload-less "Reset 48K" keeps booting the
+  // same custom ROM within the session.
+  uint8_t* _customRom = 0;
 #if PICO_RP2350
   // TIM-S Plus memory (boot-only phase, RP2350 only): 12 x 16K system RAM
   // banks (fuse pages 0-11, 192K) plus the separate 16K video RAM (fuse page
@@ -990,6 +1007,16 @@ public:
   inline volatile uint32_t hc88Q0Wr() { return _hc88Q0Wr; }
   inline volatile uint8_t hc88LatchLast() { return _hc88LatchLast; }
   inline uint8_t* memPtr(uint32_t i) { return (unsigned char*)&_RAM[i]; }
+  // Custom 48K ROM buffer access (menu ROM chooser copies the image here;
+  // the buffer is allocated on the heap on first use)
+  inline uint8_t* customRom() {
+    if (!_customRom) _customRom = (uint8_t*)malloc(1 << 14);
+    return _customRom;
+  }
+  inline bool customRomLoaded() { return _customRom != 0; }
+  inline void customRomLoaded(bool loaded) {
+    if (!loaded && _customRom) { free(_customRom); _customRom = 0; }
+  }
   inline uint32_t flipsPerFrame() { return _fcf; }
   void reset(ZxSpectrumType type);
   ZxSpectrumType type() { return _type; }

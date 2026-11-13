@@ -29,7 +29,7 @@ set(zxspectrum_vga_640x480x60Hz_defines
   DISPLAY_WIDTH_PIXELS=640
   DISPLAY_HEIGHT_PIXELS=480
   # The default interrupt source
-  ZX_SPECTRUM_INT_SRC=SyncToCpu
+  ZX_SPECTRUM_INT_SRC=SyncToDisplay
   # TODO work what this is
   PICO_SCANVIDEO_MAX_SCANLINE_BUFFER_WORDS=700
 )

@@ -24,7 +24,7 @@
 #include "SizingOutputStream.h"
 
 #ifndef ZX_SPECTRUM_INT_SRC 
-#define ZX_SPECTRUM_INT_SRC SyncToCpu
+#define ZX_SPECTRUM_INT_SRC SyncToDisplay
 #endif
 
 // HC2000: decode the compact base64/RLE patch and apply it over the embedded

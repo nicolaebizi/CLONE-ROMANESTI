@@ -39,6 +39,9 @@ private:
   FatFsFilePath _pathSnaps;
   FatFsFilePath _pathTapes;
   FatFsFilePath _pathQuickSaves;
+  // Custom 48K ROM images (main menu option R), folder zxspectrum/roms
+  // (auto-created at menu init)
+  FatFsFilePath _pathRoms;
   FatFsFilePath _pathDisks;
   FatFsFilePath _pathCobraDisks;
   FatFsFilePath _pathDisksHc2000;
@@ -70,6 +73,9 @@ private:
   // rows use letter quick keys A-E (matched case-insensitively).
   PicoQuickKeyAscii _kA;
   PicoQuickKeyAscii _kB;
+  // Main menu option R: custom 48K ZX Spectrum ROM loader. No other quick
+  // key in this file uses 'R'.
+  PicoQuickKeyAscii _kR;
 
   PicoWiz _wiz;
   PicoWizUtils _wizUtils;
@@ -171,6 +177,15 @@ private:
   CobraDiskFile *_cubzDiskFile[2];
   std::string _cubzDiskName[2];
   void cubzMount(uint8_t drive, FILINFO *finfo, const char *path);
+
+  // Custom 48K ZX Spectrum ROM (main menu option R, quick key _kR):
+  // chooser in zxspectrum/roms (same PicoExplorer machinery as the HC88 /
+  // TIMS choosers), but the selected 16384-byte .rom image is COPIED into
+  // the ZxSpectrum custom-ROM RAM buffer instead of being mounted. The row
+  // label remembers the file name, disk-row style.
+  PicoOptionText _zx48kRomOp;
+  PicoWizExplorer _chooseZx48kRom;
+  std::string _zx48kRomName;
 
   PicoSelect _audioOptions;
   PicoOption _muteOp;

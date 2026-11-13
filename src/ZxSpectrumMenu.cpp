@@ -71,6 +71,18 @@ static const char *fext(const char *filename) {
   return dot + 1;
 }
 
+// Custom 48K ROM loader: only 16384-byte *.rom images are accepted
+// (extension match is case-insensitive).
+static bool isCustom48kRom(uint32_t size, const char *filename) {
+  const char *ext = fext(filename);
+  const char *r = "rom";
+  while (*r) {
+    if ((*ext | 0x20) != *r) return false; // case-insensitive compare
+    ++r; ++ext;
+  }
+  return *ext == 0 && size == 16384;
+}
+
 PicoQuickKeyAscii *ZxSpectrumMenu::getQuickKey(uint i) {
   switch(i) {
     case 0: return &_k1;
@@ -137,6 +149,7 @@ void ZxSpectrumMenu::setWizLayout(int32_t margin, int32_t cols1, int32_t cols2, 
 #endif
     _chooseHc88DiskA.move(0, 0, _wizCols, _chooseHc88DiskA.wh());
     _chooseHc88DiskB.move(0, 0, _wizCols, _chooseHc88DiskB.wh());
+    _chooseZx48kRom.move(0, 0, _wizCols, _chooseZx48kRom.wh());
     _reset.move(0, 0, _wizCols, _reset.wh());
    _cobra.move(0, 0, _wizCols, _cobra.wh());
    _chooseCobraDisk.move(0, 0, _wizCols, _chooseCobraDisk.wh());
@@ -166,8 +179,10 @@ ZxSpectrumMenu::ZxSpectrumMenu(
    _videoDriverIndex(0),
    _pathZxSpectrum("/zxspectrum"),
    _pathSnaps(&_pathZxSpectrum, "snapshots"),
-   _pathTapes(&_pathZxSpectrum, "tapes"),
-   _pathQuickSaves(&_pathSnaps, "quicksaves"),
+    _pathTapes(&_pathZxSpectrum, "tapes"),
+    _pathQuickSaves(&_pathSnaps, "quicksaves"),
+    // Custom 48K ROM images folder (main menu option R)
+    _pathRoms(&_pathZxSpectrum, "roms"),
     _pathDisks(&_pathZxSpectrum, "disks"),
     _pathCobraDisks(&_pathDisks, "cobra1"),
     _pathDisksHc2000(&_pathDisks, "hc2000"),
@@ -186,6 +201,8 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   // quick keys (_kC/_kD are the main-menu CoBra / Disk keys - quick keys are
   // matched per menu, exactly like the shared _k1.._k9).
   _kA('A'), _kB('B'),
+  // Main menu option R: custom 48K ROM (no other quick key uses 'R')
+  _kR('R'),
 
   _wiz(_wizLeftMargin, 6, _wizCols, _explorerRows * _explorerRowsPerFile),
   _wizUtils(&_wiz, _explorerRowsPerFile, &_k1, &_k2),
@@ -211,7 +228,7 @@ ZxSpectrumMenu::ZxSpectrumMenu(
     10,
 #endif
     _menuRowsPerItem),
-  _hcDiskOp("HC2K,+3,TIMS PLUS,CUBZ"),
+  _hcDiskOp("HC2K,+3,TIMS PLUS,CUBZ,HC88"),
   _hcDiskAOp("Mount HC2000 drive A"),
   _hcBasicDiskAOp("Mount BASIC disk A"),
   _hcDiskBOp("Mount HC2000 drive B"),
@@ -262,6 +279,14 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _chooseCubzDiskA(&_wizUtils, sdCard, &_pathDisksCubz, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
   _chooseCubzDiskB(&_wizUtils, sdCard, &_pathDisksCubz, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
   _cubzDiskFile{0, 0},
+
+  // Custom 48K ZX Spectrum ROM chooser (main menu option R): the same
+  // chooser machinery as the HC88/TIMS choosers, pointed at the dedicated
+  // folder zxspectrum/roms (auto-created at menu init). The selected
+  // 16384-byte .rom image is copied into the ZxSpectrum custom-ROM RAM
+  // buffer; the 48K machine then fetches it instead of the flash ROM.
+  _zx48kRomOp("ZX48K Custom ROM"),
+  _chooseZx48kRom(&_wizUtils, sdCard, &_pathRoms, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
 
   _audioOptions(0, 0, _wizCols, 6, _menuRowsPerItem),
 
@@ -926,6 +951,55 @@ ZxSpectrumMenu::ZxSpectrumMenu(
 
   // ICE Felix HC2000 disk drive mount / eject (zxspectrum/disks/hc2000)
   _main.addOption(_hcDiskOp.addQuickKey(&_kD));
+
+  // Custom 48K ZX Spectrum ROM (main menu option R, right after the D disk
+  // option): load a 16384-byte .rom image from zxspectrum/roms into the
+  // ZxSpectrum custom-ROM RAM buffer. The 48K machine then boots it instead
+  // of the built-in flash ROM; the row label shows the loaded file name.
+  _main.addOption(_zx48kRomOp.addQuickKey(&_kR));
+  _zx48kRomOp.onPaint([=](PicoPen *pen){
+    pen->clear();
+    pen->printAtF(0, 0, false, "%-*s[ %-*s]", _wizCol1Width, "ZX48K Custom ROM",
+      _wizCol2Width, _zx48kRomName.empty() ? "-" : _zx48kRomName.c_str());
+  });
+  _zx48kRomOp.toggle([=]() {
+    _chooseZx48kRom.reload();
+    _wiz.push(
+      &_chooseZx48kRom,
+      [=](PicoPen *pen){ pen->printAt(0, 0, false, "16K ROM images (48K)"); },
+      true);
+  });
+  _chooseZx48kRom.onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+    if (isCustom48kRom(finfo->fsize, finfo->fname)) {
+      uint8_t *rom = _zxSpectrum->customRom(); // heap-allocates on first use
+      if (rom) {
+        FatFsSpiInputStream *is = new FatFsSpiInputStream(_sdCard, path);
+        const int32_t n = is->read(rom, 16384);
+        delete is;
+        if (n == 16384) {
+          _zx48kRomName = finfo->fname;
+          // Already running the 48K machine: reset immediately so the custom
+          // ROM boots. Any other active machine just keeps the buffer stored
+          // (it takes effect when the user switches to 48K).
+          if (_zxSpectrum->type() == ZxSpectrum48k) _zxSpectrum->reset(ZxSpectrum48k);
+          _main.repaint();
+        }
+        else {
+          // Short read: drop the half-loaded image again
+          _zxSpectrum->customRomLoaded(false);
+          _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported ROM"); });
+        }
+      }
+      else {
+        _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported ROM"); });
+      }
+    }
+    else {
+      _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported ROM"); });
+    }
+    _wiz.pop(true);
+  };
+  _chooseZx48kRom.onRefreshDisplay = [=]() { _main.repaint(); };
   _hcDiskOp.toggle([=]() {
     _wiz.push(
       &_hcDisk,
@@ -1492,6 +1566,9 @@ void ZxSpectrumMenu::initialise() {
 
   _pathQuickSaves.createFolders(_sdCard);
   _pathTapes.createFolders(_sdCard);
+  // Custom 48K ROM images folder (main menu option R): auto-created like
+  // the disks/HC88 folders below.
+  _pathRoms.createFolders(_sdCard);
   _pathDisks.createFolders(_sdCard);
   _pathDisksHc2000.createFolders(_sdCard);
   _pathDisksBasic.createFolders(_sdCard);
