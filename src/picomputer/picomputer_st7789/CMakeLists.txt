@@ -351,3 +351,91 @@ pico_enable_stdio_uart(ZxSpectrumMurmulatorTftIli9341I2sPs2 0)
 
 # create map/bin/hex file etc.
 pico_add_extra_outputs(ZxSpectrumMurmulatorTftIli9341I2sPs2)
+
+# ZX MURMULATOR2 board with ILI9341 SPI TFT (ST7789 driver path) + I2S audio + PS/2 keyboard
+add_executable(ZxSpectrumMurmulator2TftIli9341I2sPs2
+  ${zxspectrum_common_src}
+  ${picomputer_common_src}
+  ${zxspectrum_st7789_lcd_src}
+  main.cpp
+  st7789_lcd.cpp
+  pzx_prepare_rgb444_scanline.cpp
+)
+
+zxspectrum_generate_pio_headers(ZxSpectrumMurmulator2TftIli9341I2sPs2)
+
+target_compile_definitions(ZxSpectrumMurmulator2TftIli9341I2sPs2 PRIVATE
+  # ILI9341 TFT LCD - REAL SpeccyP GSP M2 HW102 (MURMULATOR, xtremespb/billgilbert7000)
+  # TFT: CS=12 DC=16 DIN(TFT_SDA)=18 CLK(TFT_SCL)=19 BL=15 RST=14
+  PICO_ST7789_LCD
+  LCD_PIN_CS=12
+  LCD_PIN_DC=16
+  LCD_PIN_DIN=18
+  LCD_PIN_CLK=19
+  LCD_PIN_BL=15
+  LCD_PIN_RESET=14
+  LCD_INVERSE
+  LCD_RGB
+  # ZX MURMULATOR2 peripherals, copied from ZX-MURMULATOR2_VGA_I2S_AUDIO
+  # targets in src/vga/CMakeLists.txt (VGA/scanvideo and NESPAD defines
+  # omitted - not applicable to this LCD build)
+  ZX_PLATFORM="MURMULATOR2"
+  # Configure the SPI sd card to use SPI0
+  SDCARD_PIN_SPI0_CS=5
+  SDCARD_PIN_SPI0_SCK=6
+  SDCARD_PIN_SPI0_MOSI=7
+  SDCARD_PIN_SPI0_MISO=4
+  # Use the alternate volume map
+  AY8912_ALT_VOL_MAP
+  # Tape audio in
+  EAR_PIN=22
+  # Enable the PS/2 keyboard
+  # VERIFIED in pico-emu-utils/src/ps2kbd.h: PS2KBD_CLK2_DAT =>
+  # PS2KBD_GPIO=2 (CLK), PS2KBD_GPIO_DAT_OFFSET=1 -> DATA=GPIO3.
+  USE_PS2_KBD
+  PS2KBD_CLK2_DAT
+  # Pins for dual NES joypads on Gamepad 1, same as ZX-MURMULATOR2_VGA target
+  # (src/vga/CMakeLists.txt): CLK=20, DATA=26, pio1, PIO1_IRQ_0.
+  NESPAD_DATA_PIN_BASE=26
+  NESPAD_CLK_PIN_BASE=20
+  NESPAD_PIO=pio1
+  NESPAD_IRQ=PIO1_IRQ_0
+  NESPAD_ENABLE
+  # Configure the I2S audio, pio1 SM ?
+  # NOTE: no PICO_AUDIO_I2S_SCLK macro exists in this code path. The LR-clock
+  # (word select, TDA_LCK=GPIO11) is DERIVED as PICO_AUDIO_I2S_BCLK+1 in
+  # ZxSpectrumAudioI2s.cpp (gpio_set_function(PICO_AUDIO_I2S_BCLK + 1, ...)),
+  # so BCLK=10 automatically yields SCLK=11.
+  PICO_AUDIO_I2S=1
+  PICO_AUDIO_I2S_PIO=pio1
+  PICO_AUDIO_I2S_PIO_FUNC=GPIO_FUNC_PIO1
+  PICO_AUDIO_I2S_DATA=9
+  PICO_AUDIO_I2S_BCLK=10
+  # Keyboard variant for compiling pzx_keyscan.cpp (pulled in via
+  # picomputer_common_src). NOTE: USE_KEY_MATRIX is intentionally NOT
+  # defined - keyboard input comes from PS/2 through the TinyUSB HID
+  # stack, so the local GPIO key matrix is never initialised and stays
+  # dormant.
+  PICOMPUTER_MAX
+  # NOTE: PICOMPUTER_PICOZX_LCD is intentionally NOT defined here so the
+  # PicoZX backlight hack (gpio_put(4,1)) never compiles in; backlight is
+  # driven by st7789_lcd.cpp via LCD_PIN_BL=15 instead.
+  # Core voltage default overridden to avoid brownout on this board.
+  VREG_VSEL=VREG_VOLTAGE_1_30
+)
+
+target_link_libraries(ZxSpectrumMurmulator2TftIli9341I2sPs2
+  ${zxspectrum_common_libs}
+  pico_emu_utils
+  pico_st7789_menu
+  tinyusb_host
+  tinyusb_board
+  hardware_pio
+  hardware_pwm
+)
+
+pico_enable_stdio_usb(ZxSpectrumMurmulator2TftIli9341I2sPs2 0)
+pico_enable_stdio_uart(ZxSpectrumMurmulator2TftIli9341I2sPs2 0)
+
+# create map/bin/hex file etc.
+pico_add_extra_outputs(ZxSpectrumMurmulator2TftIli9341I2sPs2)

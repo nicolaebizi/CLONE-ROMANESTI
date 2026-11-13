@@ -889,7 +889,7 @@ ZxSpectrumMenu::ZxSpectrumMenu(
       _cobraDrive = d;
       _wiz.push(
         &_chooseCobraDisk,
-        [=](PicoPen *pen){ pen->printAtF(0, 0, false, "Disk %c: (IMG 720K, DSK, EDSK)", 'A' + d); },
+        [=](PicoPen *pen){ pen->printAtF(0, 0, false, "Disk %c: (IMG 720K/SYS, DSK, EDSK)", 'A' + d); },
         true);
     });
   }

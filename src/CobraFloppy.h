@@ -77,6 +77,10 @@ private:
   uint32_t _sideBytes;
   uint8_t _spt;
   uint8_t _n;
+  // Raw 735232-byte site image: tracks 0-1 hold the protected CoBra-DOS
+  // system sectors (one 4096-byte sector per side), tracks 2-79 the usual
+  // 9 x 512 CP/M sectors.
+  bool _sys;
   static bool _rawInterleaved;
   // DSK / EDSK: offset of each track info block (0 = unformatted)
   uint32_t _trackPos[MAX_TRACKS];
@@ -190,7 +194,9 @@ private:
   uint8_t _fmtCount;        // Format Track: sectors left
   uint8_t _fmtId[4];
   const CobraDisk::Sector *_sector;
-  uint8_t _buf[1024];
+  // Largest sector transferred in non-DMA mode: N=5 (4096 bytes) on the
+  // protected CoBra-DOS system tracks.
+  uint8_t _buf[4096];
 
   void execute();
   void result(uint8_t n, bool interrupt);

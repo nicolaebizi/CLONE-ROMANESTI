@@ -73,11 +73,20 @@ bool CobraDisk::open(CobraDiskMedia *media) {
     _n = 2;
     _sides = 2;
     _spt = 9;
+    _sys = false;
     switch (size) {
       case 184320:  _cyls = 40; _sides = 1; break;
       case 368640:  _cyls = 40; break;
       case 409600:  _cyls = 40; _spt = 10; break;
       case 819200:  _cyls = 80; _spt = 10; break;
+      case 735232:
+        // CoBra site disk (Teledisk -> raw): tracks 0-1 carry the protected
+        // CoBra-DOS system sectors, 1 x 4096 bytes per side (IDs recorded
+        // from the TD0 descriptors: side 0 R=32 N=5, side 1 R=1 N=5);
+        // tracks 2-79 are the normal 9 x 512 CP/M sectors.
+        _cyls = 80;
+        _sys = true;
+        break;
       default:
         if (size == 0 || size % 9216) return false;
         _cyls = size / 9216;
@@ -109,11 +118,30 @@ uint8_t CobraDisk::track(uint8_t cyl, uint8_t side, const Sector **ids) {
   _cacheTrack = t;
   _cacheCount = 0;
   if (_format == RAW) {
+    // Protected system tracks of a 735232-byte site image: one 4096-byte
+    // sector per side with the IDs the real disk was formatted with
+    // (R=32 on side 0, R=1 on side 1, N=5).  The boot ROM verifies these
+    // IDs with Read ID before loading the system.
+    if (_sys && cyl <= 1) {
+      Sector &s = _cache[0];
+      s.c = cyl;
+      s.h = side;
+      s.r = side ? 1 : 32;
+      s.n = 5;
+      s.st1 = 0;
+      s.st2 = 0;
+      s.len = 4096;
+      s.pos = (uint32_t)cyl * 8192 + (uint32_t)side * 4096;
+      _cacheCount = 1;
+      return 1;
+    }
     // 256 byte sector tracks (DEVIL) are formatted with physical interleave 2:
     // 1, 10, 2, 11, ... 9, 18.  The 512 byte CP/M tracks are not interleaved.
     const uint16_t len = 128u << _n;
     const bool interleave = _n == 1;
     const uint8_t half = (_spt + 1) / 2;
+    // Data tracks of a site image start behind the 4 system sectors.
+    const uint32_t base = (uint32_t)t * _sideBytes - (_sys ? 2048u : 0u);
     for (uint8_t i = 0; i < _spt; ++i) {
       Sector &s = _cache[i];
       const uint8_t r = interleave ? ((i & 1) ? half + i / 2 + 1 : i / 2 + 1) : i + 1;
@@ -121,7 +149,7 @@ uint8_t CobraDisk::track(uint8_t cyl, uint8_t side, const Sector **ids) {
       s.c = cyl; s.h = side; s.r = r; s.n = _n;
       s.st1 = 0; s.st2 = 0;
       s.len = len;
-      s.pos = (uint32_t)t * _sideBytes + (uint32_t)slot * len;
+      s.pos = base + (uint32_t)slot * len;
     }
     _cacheCount = _spt;
     return _cacheCount;
@@ -590,7 +618,8 @@ bool CobraFdc::findSector() {
 }
 
 bool CobraFdc::loadSector() {
-  const uint8_t n = _n > 3 ? 3 : _n;
+  // N=5 (4096 bytes) is the protected system sector of a site image.
+  const uint8_t n = _n > 5 ? 5 : _n;
   _len = _n ? (uint16_t)(128u << n) : (uint16_t)(_cmd[8] ? _cmd[8] : 128);
   _pos = 0;
   const bool deleted = (_sector->st2 & ST2_CM) != 0;
