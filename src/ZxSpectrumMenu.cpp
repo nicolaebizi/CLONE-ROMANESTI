@@ -1032,7 +1032,12 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _hcDisk.addOption(_hcDiskAOp.addQuickKey(&_k1));
   _hcDisk.addOption(_hcDiskBOp.addQuickKey(&_k2));
   _hcDisk.addOption(_hcDiskEjectOp.addQuickKey(&_k3));
-  _hcDisk.addOption(_hcBasicDiskAOp.addQuickKey(&_k5));
+  // Disk-menu row 5 ("Mount BASIC disk A"): quick key '4' (not '5') — '5'
+  // is the SD-card REFRESH key in the file choosers (PicoExplorer ascii 0x35)
+  // and the menu header tells the user to press 5 for refresh. '4' is unused
+  // in this menu; the shared _k4 matcher only matches options of the active
+  // menu (PicoSelect::keydown), so reuse is safe.
+  _hcDisk.addOption(_hcBasicDiskAOp.addQuickKey(&_k4));
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   _hcDisk.addOption(_plus3DiskAOp.addQuickKey(&_k6));
   _hcDisk.addOption(_plus3DiskBOp.addQuickKey(&_k7));
