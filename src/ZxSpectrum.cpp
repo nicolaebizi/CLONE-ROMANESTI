@@ -178,6 +178,13 @@ void ZxSpectrum::setAudioDriver(zx_spectrum_audio_driver_t* audio_driver) {
 
 void ZxSpectrum::transmute(ZxSpectrumType type) {
   _type = type;
+  // Custom 48K ROM (bank 7 of _RAM) is invalid outside the 48K machine: the
+  // 128K/+3 machines page bank 7 into Q3 (port $7FFD) and HC2000 keeps its
+  // IF1 shadow in _RAM[7]. Invalidate the image (pointer only, the bank is
+  // zeroed by the reset() that follows) so it cannot be clobbered while it
+  // would still be needed - a custom ROM must be re-selected after switching
+  // back to the 48K machine.
+  if (type != ZxSpectrum48k) customRomLoaded(false);
   if (type == ZxSpectrumCobra) {
     _Z80.fetch_opcode = cobraFetchOpcode;
     _Z80.reti = cobraReti;
@@ -421,7 +428,18 @@ void ZxSpectrum::reset(ZxSpectrumType type)
   setPageaddr(3, (uint8_t*)&_RAM[0]);
   _ear = false;
   _pulseChain.reset();
-  memset(_RAM, 0, sizeof(_RAM));
+  if (_type == ZxSpectrum48k && _customRom) {
+    // Custom-ROM bank fix: bank 7 holds the live custom ROM image and the
+    // 48K machine never pages it in (Q0=ROM/custom, Q1=_RAM[5] screen,
+    // Q2=_RAM[2], Q3=_RAM[0]); keep it across the pool zeroing so a
+    // reload-less "Reset 48K" keeps booting the same custom ROM. Every
+    // other bank is zeroed as usual.
+    for (uint32_t b = 0; b < 8; ++b)
+      if (b != CustomRomBank) memset(_RAM[b], 0, 1 << 14);
+  }
+  else {
+    memset(_RAM, 0, sizeof(_RAM));
+  }
 #if PICO_RP2350
   // TIM S Plus: zero the 12 system banks and the video RAM on reset so the
   // boot ROM executes against a deterministic machine state.

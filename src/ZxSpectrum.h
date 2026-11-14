@@ -841,21 +841,29 @@ inline void writeIO(uint16_t address, uint8_t value)
   uint8_t cobraReadIO(uint16_t address);
   void cobraWriteIO(uint16_t address, uint8_t value);
   
+  // _RAM pool bank that stores the custom 48K ROM image (see _customRom).
+  // Highest bank of the 8-bank pool; never paged in by the 48K machine.
+  enum { CustomRomBank = 7 };
+
   uint8_t _RAM[8][1<<14];
-  // Custom 16K ROM image for the 48K machine (menu option R): heap buffer
-  // allocated from the SD-copying side when an image is loaded. Null by
-  // default -> the built-in flash ROM is used. No persistence across power
-  // cycles (the pointer is a plain member, never saved). Intentionally NOT
-  // freed or cleared on reset: a reload-less "Reset 48K" keeps booting the
-  // same custom ROM within the session.
+  // Custom 16K ROM image for the 48K machine (menu option R): bank 7 of the
+  // shared _RAM pool above (pool offset _RAM + 0x1C000). No heap allocation
+  // and no extra static buffer - the image lives in a pool bank the 48K
+  // machine never touches, so it cannot steal RAM from the heap (the old
+  // 16K static member shifted/shrank the scanvideo render-buffer heap and
+  // blacked the auto VGA picture). Null pointer by default -> the built-in
+  // flash ROM is used. No persistence across power cycles (the pointer is a
+  // plain member, never saved). Intentionally NOT freed or cleared on a 48K
+  // reset: a reload-less "Reset 48K" keeps booting the same custom ROM within
+  // the session (reset() skips zeroing the bank while the 48K machine uses
+  // it). Bank 7 is idle while the 48K machine runs: its CPU pages are
+  // Q0=ROM/custom buffer, Q1=_RAM[5] (screen), Q2=_RAM[2], Q3=_RAM[0], and
+  // port $7FFD paging exists on the 128K/+3 machines only. The 128K/+3
+  // machines page bank 7 into Q3 (and HC2000 keeps its IF1 shadow in _RAM[7]),
+  // so transmute() invalidates the custom ROM whenever a non-48K machine is
+  // selected - a custom ROM must be re-selected after switching back to the
+  // 48K machine (menu row keeps the file name but the image is dropped).
   uint8_t* _customRom = 0;
-#if PICO_RP2350
-  // Static 16K custom-ROM buffer on RP2350 (menu option R): the runtime heap
-  // malloc of 16384 bytes could fail/fragment late in the session and freeze
-  // the machine; a static pool removes the malloc entirely. RP2040 builds
-  // keep the malloc fallback so they are byte-for-byte unchanged.
-  uint8_t _customRomBuf[1<<14];
-#endif
 #if PICO_RP2350
   // TIM-S Plus memory (boot-only phase, RP2350 only): 12 x 16K system RAM
   // banks (fuse pages 0-11, 192K) plus the separate 16K video RAM (fuse page
@@ -1020,22 +1028,18 @@ public:
   inline volatile uint8_t hc88LatchLast() { return _hc88LatchLast; }
   inline uint8_t* memPtr(uint32_t i) { return (unsigned char*)&_RAM[i]; }
   // Custom 48K ROM buffer access (menu ROM chooser copies the image here;
-  // the buffer is allocated on first use - a static pool on RP2350, the heap
-  // on RP2040)
+  // the buffer is bank 7 of the shared _RAM pool on every board - no heap
+  // allocation, no extra static buffer).
   inline uint8_t* customRom() {
-#if PICO_RP2350
-    if (!_customRom) _customRom = _customRomBuf;
-#else
-    if (!_customRom) _customRom = (uint8_t*)malloc(1 << 14);
-#endif
+    if (!_customRom) _customRom = (uint8_t*)&_RAM[CustomRomBank];
     return _customRom;
   }
   inline bool customRomLoaded() { return _customRom != 0; }
   inline void customRomLoaded(bool loaded) {
-    if (!loaded && _customRom) {
-#if !PICO_RP2350
-      free(_customRom);
-#endif
+    if (!loaded) {
+      // Invalidate only: bank 7 is left as-is and gets zeroed by the next
+      // reset() of any machine (the machine-switch guard runs through
+      // transmute(), which fires before reset() zeroes the pool).
       _customRom = 0;
     }
   }
