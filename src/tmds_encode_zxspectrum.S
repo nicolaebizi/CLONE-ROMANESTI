@@ -86,6 +86,77 @@ tmds_encode_screen:
   pop {r4-r7, pc}
 
 //
+// COBRA 80 CHR/LIN CELLS
+//
+// Same encode body as tmds_encode_screen, but the scanline length is a
+// runtime cell count instead of a fixed 32 cells. Used to draw the CoBra
+// 80 chr/lin border cells from the upper half of the video RAM.
+//
+// r0 is the screen (pixel data) pointer
+// r1 is the attribute pointer
+// r2 is the output TMDS buffer
+// r3 is the cell count (number of 8-pixel cells to encode)
+// First stack argument is the flash mask
+// Second stack argument is the color channel
+//
+.section .scratch_x.tmds_encode_cobra80_cells, "ax"
+.global tmds_encode_cobra80_cells
+.type tmds_encode_cobra80_cells,%function
+.thumb_func
+tmds_encode_cobra80_cells:
+
+  push {r4-r7, lr}
+  mov r4, r8
+  mov r5, r9
+  mov r6, r10
+  push {r4-r6}
+
+  lsls r7, r3, #5    // ncells * 8 pixels * 2 pixels * 2 bytes = * 32 bytes
+  add r7, r2
+  mov ip, r7
+
+  ldr r3, [sp, #32] // 8 words saved, so 32-byte offset to first stack argument
+  mov r8, r3        // save the flash mask in r8
+
+  ldr r3, [sp, #36] // second stack argument
+  lsls r3, #8       // * 256
+  ldr r7, =attr_to_colour_chan_B
+  adds r3, r7
+
+  ldr r7, =palettised_2bpp_tables
+  mov r9, r7
+  mov r10, r1
+  b 2f
+1:
+  mov r4, r10
+  ldrb r1, [r4]      // Load the colour attribute
+  mov r5, r8
+  ands r1, r5
+  adds r4, #1        // Increment the attribute pointer
+  adds r1, r3        // Pointer to the entry in attr_to_colour_chan_X
+  ldrb r1, [r1]      // Load the translated colour b0b1f1f0
+  mov r10, r4
+  ldrb r4, [r0]
+  lsls r5, r1, #5
+  add r5, r9
+  movs r1, 24 // 00011000
+  do_crumb lsrs 3
+  do_crumb lsrs 1
+  do_crumb lsls 1
+  do_crumb lsls 3
+  adds r0, #1
+2:
+  cmp r2, ip
+  blo 1b
+
+  pop {r4-r6}
+  mov r8, r4
+  mov r9, r5
+  mov r10, r6
+  mov r0, r2         // Return the output buffer pointer
+  pop {r4-r7, pc}
+
+//
 // BORDER
 //
 // r0 is width in pixels
