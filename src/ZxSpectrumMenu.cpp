@@ -743,11 +743,13 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   });
   _reset.enableQuickKeys();
 
+#if PICO_RP2350
   _resetPraeOp.toggle([=]() {
     _snapName.clear();
     _zxSpectrum->reset(ZxSpectrumPrae);
     _wiz.pop(true);
   });
+#endif
 
   _resetTurboOp.toggle([=]() {
     _snapName.clear();
