@@ -15,6 +15,9 @@
 #include "ZxSpectrumAudioVol.h"
 #include "ZxSpectrumAudioDriver.h"
 #include "ZxSpectrumVideoDriver.h"
+#ifdef ZX_VIDEO_AUTO_DETECT
+#include "VideoAutoDetect.h"
+#endif
 #include "PicoCoreVoltage.h"
 #include "CobraDiskFile.h"
 #if PICO_RP2350
@@ -1441,10 +1444,21 @@ _audioOutOptions.addOption(_audioHdmiOp.addQuickKey(getQuickKey(audioOutQuickKey
 #else
      pen->printAt(0, 0, false, "ZX Spectrum 48K/128K by fruit-bat");
 #endif
+#ifdef ZX_VIDEO_AUTO_DETECT
+     // One-line report of the boot-time VGA/HDMI auto-detect decision.
+     // It shares row 1 with the "Built for" line: the old row-2 print
+     // was covered by the first menu option row. The raw pin read is
+     // no longer printed (rule hardware-validated); the
+     // zxVideoAutoDetectPinsRaw global stays exported in VideoAutoDetect
+     // for future debugging.
+     pen->printAtF(0, 1, false, "Built for %s | Video: %s",
+        PICO_MCU, zxVideoAutoDetectName());
+#else
      pen->printAtF(0, 1, false, "Built for %s on %s",
         PICO_MCU,
         __DATE__
       );
+#endif
 
      pen->printAt(0, SZ_FRAME_ROWS-1, false, "F1 to exit menu");
      pen->printAt(SZ_FRAME_COLS-14, SZ_FRAME_ROWS-1, false, "ESC to go back");

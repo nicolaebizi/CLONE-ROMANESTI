@@ -203,6 +203,7 @@ endfunction()
 add_subdirectory(hdmi)
 add_subdirectory(picomputer)
 add_subdirectory(vga)
+add_subdirectory(vgahdmi)
 add_subdirectory(picovga)
 
 add_custom_target (relevant)
