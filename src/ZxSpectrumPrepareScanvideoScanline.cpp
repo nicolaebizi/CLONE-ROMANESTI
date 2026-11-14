@@ -304,6 +304,52 @@ void __not_in_flash_func(zx_prepare_scanvideo_scanline_cubz)(
   scanline_buffer->status = SCANLINE_OK;
 }
 
+// PRAE M-80: RAM-indirect 256x256 monochrome bitmap, 32 bytes per scanline,
+// linear (row y = bytes 32*y .. 32*y+31 of the bitmap, MSB = leftmost pixel;
+// the ROM embeds its own 5-px glyphs into the bitmap, so no font/attr logic
+// is needed). Scale decision: 2x horizontally (512 output px, same width as
+// the ZX 640-wide window) and vertically the 240 half-lines of the 640x480
+// mode each show one bitmap line doubled -> 480 lines for 256x2 = 512, so
+// the TOP 16 bitmap lines are CROPPED: output line 0..239 shows bitmap
+// lines 16..255. The ROM puts the prompt/banner at the BOTTOM rows and the
+// top rows 0-1 are expendable (the logo at row 3+ stays visible).
+// The border is a fixed black frame (PRAE has no colour border).
+void __not_in_flash_func(zx_prepare_scanvideo_scanline_prae)(
+  struct scanvideo_scanline_buffer *scanline_buffer,
+  uint32_t y,
+  uint8_t* vram
+) {
+  uint32_t* buf = scanline_buffer->data;
+  const uint32_t on = zxd_colour_words[15] & 0xffff;
+  const uint32_t off = zxd_colour_words[0] & 0xffff;
+  const uint32_t margin = (DISPLAY_WIDTH_PIXELS - 512) >> 1;
+  const uint8_t *s = vram + (y + 16) * 32; // top-crop: output y -> bitmap y+16
+
+  if (margin) buf = single_color_run(buf, margin, 0);
+  const uint8_t b0 = s[0];
+  // RAW_RUN header: the two header words carry the colours of the first 2
+  // output pixels - both are the leftmost bitmap bit (2x horizontal scale
+  // doubles every bit). Exactly (512-2)/2 = 255 token words must then
+  // follow: 7 tokens for the remaining 7 bits of s[0] (each bit doubled:
+  // both 16-bit halves carry the same colour) + 31 bytes x 8 tokens = 255.
+  *buf++ = COMPOSABLE_RAW_RUN | (((b0 & 0x80) ? on : off) << 16);
+  *buf++ = (512 - 3) | (((b0 & 0x80) ? on : off) << 16);
+  for (uint32_t j = 0x40; j; j >>= 1) {
+    const uint32_t c = ((b0 & j) ? on : off);
+    *buf++ = c | (c << 16);
+  }
+  for (uint32_t c = 1; c < 32; ++c) {
+    const uint8_t b = s[c];
+    for (uint32_t j = 0x80; j; j >>= 1) {
+      *buf++ = ((b & j) ? on : off) * 0x10001u;
+    }
+  }
+  if (margin) buf = single_color_run(buf, margin, 0);
+  buf = end_run(buf);
+  scanline_buffer->data_used = buf - scanline_buffer->data;
+  scanline_buffer->status = SCANLINE_OK;
+}
+
 void __not_in_flash_func(zx_prepare_scanvideo_blankline)(
   struct scanvideo_scanline_buffer *scanline_buffer
 ) {

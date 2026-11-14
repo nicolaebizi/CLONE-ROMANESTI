@@ -11,6 +11,8 @@
 // TIM-S Plus boot-only (RP2350 only): 2 KiB boot EPROM mirrored x8 into the
 // 16K low bank.
 #include "tims_boot_rom.h"
+// PRAE (10th computer, boot-only, RP2350 only): 16K BASIC ROM dump.
+#include "prae_rom.h"
 #endif
 // HC88 phase 1: the 16K motherboard ROM dump.
 #include "hc88_rom.h"
@@ -86,6 +88,18 @@ static void loadIf1V2(uint8_t *destination) {
 // (a few milliseconds).  Until then the 8255 is held in reset and PO is
 // preset; the boot ROM waits with its DELAY loop (~49ms) before using it.
 #define COBRA_POR_TSTATES (5 * 3500)
+
+// PRAE diag exports (menu row-1 line; refreshed by ZxSpectrum::praeVram()).
+uint16_t zxPraeBase = 0;
+uint16_t zxPraeEnd = 0;
+uint8_t zxPraeData[4] = {0, 0, 0, 0};
+
+// ZX48K custom-ROM loader diag export (menu row-1 line): the loader writes
+// its current step label here BEFORE the step runs (open/alloc/copy/reset/
+// done). Unlike the old transient showMessage overlays, this label persists
+// across repaints, so the last painted stage is still on screen if the
+// machine freezes mid-load. NULL until the first ROM load.
+const char* zxRomLoadStage = 0;
 
 ZxSpectrum::ZxSpectrum(
     ZxSpectrumKeyboard *keyboard1,
@@ -194,8 +208,7 @@ void ZxSpectrum::transmute(ZxSpectrumType type) {
     case ZxSpectrumCobra:
     case ZxSpectrumCubz:
       _portMem = 0x20;
-      break;
-    case ZxSpectrum48k:
+      break;    case ZxSpectrum48k:
       setPageaddr(0, (uint8_t*)basic);
       _portMem = 0x20;
       break;
@@ -230,6 +243,15 @@ void ZxSpectrum::transmute(ZxSpectrumType type) {
       _hc88Latch = 0;
       _hc88If1Paged = false;
       break;
+#if PICO_RP2350
+    case ZxSpectrumPrae:
+      // PRAE: fixed 16K ROM at $0000-$3FFF (no paging), no latches beyond
+      // the port $80 row select (reset in reset()). The 48K RAM page table
+      // is applied by applyPraeMap() at the end of reset().
+      setPageaddr(0, (uint8_t*)prae_rom);
+      _portMem = 0x20;
+      break;
+#endif
     case ZxSpectrum128k:
     case ZxSpectrumPlus3:
     default:
@@ -385,6 +407,20 @@ void ZxSpectrum::applyHc88Map() {
   }
 }
 
+#if PICO_RP2350
+// PRAE memory map (fixed, no paging hardware): ROM $0000-$3FFF (reads; writes
+// to the ROM region are ignored in writeByte), then the flat 48K RAM
+// $4000-$FFFF as quadrant banks _RAM[1], _RAM[2], _RAM[3] of the shared base
+// pool (only one machine type is live at a time; reset() memsets the whole
+// pool, which also zeroes the PRAE RAM deterministically).
+void ZxSpectrum::applyPraeMap() {
+  setPageaddr(0, (uint8_t*)prae_rom);
+  setPageaddr(1, (uint8_t*)&_RAM[1]);
+  setPageaddr(2, (uint8_t*)&_RAM[2]);
+  setPageaddr(3, (uint8_t*)&_RAM[3]);
+}
+#endif
+
 void ZxSpectrum::reset(ZxSpectrumType type)
 {
   _type = type;
@@ -430,6 +466,14 @@ void ZxSpectrum::reset(ZxSpectrumType type)
   if (type == ZxSpectrumHc88) {
     memset(_hc88Vram, 0, sizeof(_hc88Vram));
   }
+#if PICO_RP2350
+  // PRAE: the 48K RAM lives in the shared _RAM pool (already memset above);
+  // reset the port $80 row latch and the 8x5 key matrix.
+  if (type == ZxSpectrumPrae) {
+    _praeLatch = 0;
+    memset(_praeKeys, 0, sizeof(_praeKeys));
+  }
+#endif
   // HC2000: the Interface I shadow page gets the patched v2 ROM
   if (type == ZxSpectrumHc2000) loadIf1V2((uint8_t*)&_RAM[7]);
   // Turbo Spectrum: F5 config and its effective mapping reset to EEPROM mode
@@ -442,6 +486,9 @@ void ZxSpectrum::reset(ZxSpectrumType type)
   else if (type == ZxSpectrumTimsPlus) applyTimsMap(); // boot map after RST
 #endif
   else if (type == ZxSpectrumHc88) applyHc88Map(); // reset map: ROM at Q0, VRAM at Q1 (latch 0)
+#if PICO_RP2350
+  else if (type == ZxSpectrumPrae) applyPraeMap(); // fixed map: ROM + 48K RAM
+#endif
   _port254 = 0x20;  //0x30;
   _ay.reset();
   if (_keyboard1) _keyboard1->reset();
@@ -516,6 +563,42 @@ void ZxSpectrum::cubzKey(uint8_t ascii) {
   _cubzKbdQ[_cubzKbdHead] = ascii;
   _cubzKbdHead = next;
 }
+
+#if PICO_RP2350
+// PRAE 8x5 keyboard matrix, calibrated from the ROM key table at 0x3634
+// (40 bytes, SECOND PASS). The decode at 0x32B6-0x32C8 forms the index as
+// (column << 3) | row (E = column index from the RRA loop, D = row counter
+// incremented per row-select step), so the table is COLUMN-major: each
+// column of the physical matrix is a run of 8 bytes. Byte 0 of each run is
+// unused (top-row splice: rows are ordered 1,3,5,7 down the D counter, the
+// first entry of each column belongs to the missing "row 0x3F" step that
+// the 0x40-based stepper never reaches). The two 0x00 cells are the
+// CTRL/SHIFT-type special keys (no emulated action this phase).
+static const uint8_t praeKeyTable[8][5] = {
+  { '1', 'A', 'E', 'T', 'U' },
+  { '2', 'Z', 'R', 'Y', 'I' },
+  { 'Q', 0x00, 'S', 'F', 'H' },
+  { 'W', '3', 'D', 'G', 'J' },
+  { 0x00, '4', 'C', 'B', 'M' },
+  { 'A', 'E', 'X', 'V', 'N' },
+  { 'Z', 'S', '5', '7', '9' },
+  { 0x00, 'D', '6', '8', '0' }
+};
+
+void ZxSpectrum::praeKey(uint8_t ascii, bool down) {
+  if (ascii >= 'a' && ascii <= 'z') ascii -= 0x20; // ROM reads uppercase cells
+  for (uint8_t row = 0; row < 8; ++row) {
+    for (uint8_t col = 0; col < 5; ++col) {
+      if (praeKeyTable[row][col] == ascii) {
+        const uint8_t bit = 1 << col;
+        if (down) _praeKeys[row] |= bit;
+        else _praeKeys[row] &= ~bit;
+        return;
+      }
+    }
+  }
+}
+#endif
 
 // CUB-Z ports (Fuse machines_periph.c cubz_io_ports):
 //   $84/$85 8257 channel 2 address/count, $88 8257 mode (W) / status (R)

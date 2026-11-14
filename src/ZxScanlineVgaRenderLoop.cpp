@@ -253,6 +253,13 @@ void __not_in_flash_func(ZxScanlineVgaRenderLoop)(
         zxSpectrum.cubzScroll()
       );
     }
+    else if (zxSpectrum.prae()) {
+      zx_prepare_scanvideo_scanline_prae(
+        scanline_buffer,
+        y - blankTopLines,
+        zxSpectrum.praeVram()
+      );
+    }
     else if (zxSpectrum.cobra80Char()) {
       zx_prepare_scanvideo_scanline_cobra80(
         scanline_buffer,

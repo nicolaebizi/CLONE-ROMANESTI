@@ -151,6 +151,12 @@ static uint8_t cubzAscii(uint8_t k, uint8_t m) {
 
 static bool KEYS_SORTED  = false;
 
+// PRAE: same US-layout ASCII translation as CUB-Z (the machine's own matrix
+// then maps the ASCII to a cell); unsupported keys map to 0 and are ignored.
+static uint8_t praeAscii(uint8_t k, uint8_t m) {
+  return cubzAscii(k, m);
+}
+
 static int keys_comparator(const ZxSpectrumHidKey *k1, const ZxSpectrumHidKey *k2) {
   int kk1 = (int)k1->keycode;
   int kk2 = (int)k2->keycode;
@@ -241,6 +247,7 @@ int ZxSpectrumHidKeyboard::processHidReport(hid_keyboard_report_t const *report,
   if (m & 0x40) press(7, BIT1); // AtlGr -> Symbol
   const bool cobra = _ZxSpectrum && _ZxSpectrum->type() == ZxSpectrumCobra;
   const bool cubz = _ZxSpectrum && _ZxSpectrum->type() == ZxSpectrumCubz;
+  const bool prae = _ZxSpectrum && _ZxSpectrum->type() == ZxSpectrumPrae;
   if (cobra && (m & 0x11)) press(0, BIT5); // Ctrl -> CoBra CTRL
 
   uint32_t fkd = 0;
@@ -262,6 +269,17 @@ int ZxSpectrumHidKeyboard::processHidReport(hid_keyboard_report_t const *report,
       const uint8_t a = cubzAscii(hidKeyCode, m);
       if (a) _ZxSpectrum->cubzKey(a);
     }
+
+#if PICO_RP2350
+    if (prae && hidKeyCode > 1) {
+      // PRAE: the ROM polls its 8x5 matrix, so ASCII keystrokes are mapped
+      // into matrix cells (press = key still in the report, release = key
+      // present in the previous report only). ASCII table is the first-pass
+      // 8x5 cell map; punctuation keys have no cell this phase.
+      const uint8_t a = praeAscii(hidKeyCode, m);
+      if (a) _ZxSpectrum->praeKey(a, !isInReport(prev_report, hidKeyCode));
+    }
+#endif
 
     if (cobra) {
       for (unsigned int c = 0; c < sizeof(COBRA_KEYS) / sizeof(COBRA_KEYS[0]); ++c) {

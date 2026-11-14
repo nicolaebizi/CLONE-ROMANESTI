@@ -198,7 +198,9 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _zxSpectrumSettings(settings),
   _tis(0),
 
-  _k1('1'), _k2('2'), _k3('3'), _k4('4'), _k5('5'), _k6('6'), _k7('7'), _k8('8'), _k9('9'), 
+  _k1('1'), _k2('2'), _k3('3'), _k4('4'), _k5('5'), _k6('6'), _k7('7'), _k8('8'), _k9('9'),
+  // Reset menu row 10 quick key (PRAE, RP2350 only)
+  _k0('0'),
   _kV('v'), _kK('k'), _kS('s'), _kQ('q'), _kC('c'), _kD('D'),
   // Disk menu (D) rows 10-13: the CUB-Z / HC88 rows reuse the shared letter
   // quick keys (_kC/_kD are the main-menu CoBra / Disk keys - quick keys are
@@ -295,9 +297,9 @@ ZxSpectrumMenu::ZxSpectrumMenu(
 
   _reset(0, 0, _wizCols,
 #if PICO_RP2350
-    // One extra row for the RP2350-only TIM S Plus reset entry
+    // Two extra rows for the RP2350-only TIM S Plus and PRAE reset entries
     // (the list scrolls anyway; HC88 is present on every platform)
-    9 * SZ_MENU_SEP,
+    10 * SZ_MENU_SEP,
 #else
     // 48K/128K/Turbo/HC2000/CoBra/+3/CUB-Z/HC88
     8 * SZ_MENU_SEP,
@@ -313,6 +315,9 @@ ZxSpectrumMenu::ZxSpectrumMenu(
 #endif
   _resetHc88Op("Reset HC88"),
   _resetCubzOp("Reset CUB-Z"),
+#if PICO_RP2350
+  _resetPraeOp("Reset PRAE"),
+#endif
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   _resetPlus3Op("Reset ZX Spectrum +3"),
 #endif
@@ -498,6 +503,9 @@ ZxSpectrumMenu::ZxSpectrumMenu(
 #endif
       case ZxSpectrumHc88: m = "HC88" ; break;
       case ZxSpectrumCubz: m = "CUB-Z" ; break;
+#if PICO_RP2350
+      case ZxSpectrumPrae: m = "PRAE" ; break;
+#endif
       default: m = "" ; break;
     }
     pen->printAtF(0, 0, false,"%-*s[ %-*s]", _wizCol1Width, "Reset", _wizCol2Width, m);
@@ -722,12 +730,24 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   // type + memory map + VRAM video only; disk mounts live in the HC2000
   // disk menu below.
   _reset.addOption(_resetHc88Op.addQuickKey(&_k9));
+#if PICO_RP2350
+  // PRAE (10th computer, boot-only, RP2350 only): reset menu row 10, quick
+  // key '0'. Phase 1 is machine type + memory map + linear bitmap video +
+  // port $80 matrix keyboard; tape is deferred (phase 3).
+  _reset.addOption(_resetPraeOp.addQuickKey(&_k0));
+#endif
   _resetCubzOp.toggle([=]() {
     _snapName.clear();
     _zxSpectrum->reset(ZxSpectrumCubz);
     _wiz.pop(true);
   });
   _reset.enableQuickKeys();
+
+  _resetPraeOp.toggle([=]() {
+    _snapName.clear();
+    _zxSpectrum->reset(ZxSpectrumPrae);
+    _wiz.pop(true);
+  });
 
   _resetTurboOp.toggle([=]() {
     _snapName.clear();
@@ -969,13 +989,24 @@ ZxSpectrumMenu::ZxSpectrumMenu(
     _chooseZx48kRom.reload();
     _wiz.push(
       &_chooseZx48kRom,
-      [=](PicoPen *pen){ pen->printAt(0, 0, false, "16K ROM images (48K)"); },
+      [=](PicoPen *pen){ pen->printAtF(0, 0, false, "16K ROM images (48K) %s",
+        zxRomLoadStage ? zxRomLoadStage : ""); },
       true);
   });
   _chooseZx48kRom.onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+    // Persistent stage indicator (rfix4, replaces the rfix3 transient
+    // showMessage overlays): the stage label is written into the global
+    // zxRomLoadStage BEFORE the step runs and is printed in the menu header
+    // row 1 and in this explorer title on every repaint. The menu repaints
+    // continuously in VGA menu mode, so the last painted stage is still
+    // visible at a freeze - unlike the old transient overlays, which were
+    // often never repainted before the machine hung.
+    zxRomLoadStage = "ROM: open";
     if (isCustom48kRom(finfo->fsize, finfo->fname)) {
-      uint8_t *rom = _zxSpectrum->customRom(); // heap-allocates on first use
+      zxRomLoadStage = "ROM: alloc";
+      uint8_t *rom = _zxSpectrum->customRom();
       if (rom) {
+        zxRomLoadStage = "ROM: copy";
         FatFsSpiInputStream *is = new FatFsSpiInputStream(_sdCard, path);
         const int32_t n = is->read(rom, 16384);
         delete is;
@@ -984,21 +1015,25 @@ ZxSpectrumMenu::ZxSpectrumMenu(
           // Already running the 48K machine: reset immediately so the custom
           // ROM boots. Any other active machine just keeps the buffer stored
           // (it takes effect when the user switches to 48K).
-          if (_zxSpectrum->type() == ZxSpectrum48k) _zxSpectrum->reset(ZxSpectrum48k);
+          if (_zxSpectrum->type() == ZxSpectrum48k) {
+            zxRomLoadStage = "ROM: reset";
+            _zxSpectrum->reset(ZxSpectrum48k);
+          }
+          zxRomLoadStage = "ROM: done";
           _main.repaint();
         }
         else {
           // Short read: drop the half-loaded image again
           _zxSpectrum->customRomLoaded(false);
-          _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported ROM"); });
+          zxRomLoadStage = "ROM: short read";
         }
       }
       else {
-        _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported ROM"); });
+        zxRomLoadStage = "ROM: no buffer";
       }
     }
     else {
-      _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported ROM"); });
+      zxRomLoadStage = "ROM: unsupported";
     }
     _wiz.pop(true);
   };
@@ -1438,7 +1473,7 @@ _audioOutOptions.addOption(_audioHdmiOp.addQuickKey(getQuickKey(audioOutQuickKey
     _wiz.pop(true);
   };
 
-  onPaint([](PicoPen *pen) {
+  onPaint([this](PicoPen *pen) {
 #ifdef ZX_PLATFORM
      pen->printAtF(0, 0, false, "ZX Spectrum 48K/128K by fruit-bat on %s", ZX_PLATFORM);
 #else
@@ -1451,14 +1486,37 @@ _audioOutOptions.addOption(_audioHdmiOp.addQuickKey(getQuickKey(audioOutQuickKey
      // no longer printed (rule hardware-validated); the
      // zxVideoAutoDetectPinsRaw global stays exported in VideoAutoDetect
      // for future debugging.
-     pen->printAtF(0, 1, false, "Built for %s | Video: %s",
-        PICO_MCU, zxVideoAutoDetectName());
+     // PRAE phase-1 diag: on the PRAE machine the same row exposes the
+     // ROM's own screen vars instead (base/end words + first 4 bytes at
+     // base, refreshed per scanline by ZxSpectrum::praeVram()).
+     if (_zxSpectrum && _zxSpectrum->prae()) {
+       pen->printAtF(0, 1, false, "PRAE b:%04X e:%04X d:%02X%02X%02X%02X",
+          zxPraeBase, zxPraeEnd,
+          zxPraeData[0], zxPraeData[1], zxPraeData[2], zxPraeData[3]);
+     }
+     else {
+       pen->printAtF(0, 1, false, "Built for %s | Video: %s",
+          PICO_MCU, zxVideoAutoDetectName());
+     }
 #else
-     pen->printAtF(0, 1, false, "Built for %s on %s",
-        PICO_MCU,
-        __DATE__
-      );
+     // Same PRAE diag for the fixed-video builds (no auto-detect).
+     if (_zxSpectrum && _zxSpectrum->prae()) {
+       pen->printAtF(0, 1, false, "PRAE b:%04X e:%04X d:%02X%02X%02X%02X",
+          zxPraeBase, zxPraeEnd,
+          zxPraeData[0], zxPraeData[1], zxPraeData[2], zxPraeData[3]);
+     }
+     else {
+       pen->printAtF(0, 1, false, "Built for %s on %s",
+          PICO_MCU,
+          __DATE__
+        );
+     }
 #endif
+
+     // Persistent ROM-load stage (rfix4): printed in the row-1 area, right
+     // of the "Built for ..." / PRAE report, so the last loader step stays
+     // visible across repaints until the next ROM load replaces it.
+     if (zxRomLoadStage) pen->printAt(40, 1, false, zxRomLoadStage);
 
      pen->printAt(0, SZ_FRAME_ROWS-1, false, "F1 to exit menu");
      pen->printAt(SZ_FRAME_COLS-14, SZ_FRAME_ROWS-1, false, "ESC to go back");
