@@ -63,9 +63,6 @@ private:
   PicoQuickKeyAscii _k7;
   PicoQuickKeyAscii _k8;
   PicoQuickKeyAscii _k9;
-  // Reset menu row 10: PRAE (RP2350 only). '0' is unused by every other
-  // quick key in this menu.
-  PicoQuickKeyAscii _k0;
   PicoQuickKeyAscii _kV;
   PicoQuickKeyAscii _kK;
   PicoQuickKeyAscii _kS;
@@ -208,10 +205,6 @@ private:
   // ICE Felix HC88 reset entry (phase 1: no FDC, no hires)
   PicoOptionText _resetHc88Op;
   PicoOptionText _resetCubzOp;
-#if PICO_RP2350
-  // PRAE reset entry (boot-only machine, RP2350 only), reset menu row 10
-  PicoOptionText _resetPraeOp;
-#endif
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   PicoOptionText _resetPlus3Op;
 #endif

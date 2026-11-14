@@ -44,12 +44,7 @@ enum ZxSpectrumType {
   // 16K VRAM is extra). No FDC and no hires mode this phase.
   ZxSpectrumHc88,
   // ICE Felix CUB-Z (8th computer): CP/M machine, 64K RAM + 16K video RAM
-  ZxSpectrumCubz,
-  // PRAE (Patrubany) M-80 BASIC (10th computer; phase 1: machine type + memory
-  // map + RAM-indirect bitmap video + port $80 keyboard matrix). RP2350-only
-  // this phase (the ROM's RAM top walks the full 48K address space).
-  // Appended at the end so existing enum values stay stable for snapshot files.
-  ZxSpectrumPrae
+  ZxSpectrumCubz
 };
 
 // CoBra 1 mainboard v.0.2 jumper configurations (Jumper settings table).
@@ -64,18 +59,9 @@ enum ZxSpectrumIntSource {
   SyncToCpu     = 1
 };
 
-// PRAE (10th computer) diag exports for the menu row-1 line, in the
-// VideoAutoDetect style: declared here, defined in ZxSpectrum.cpp and
-// refreshed by ZxSpectrum::praeVram() on every scanline the video core
-// renders (cheap: 3 LE words + 4 byte reads; cross-core reads from the
-// menu are fine for a diagnostic).
-extern uint16_t zxPraeBase;   // LE word at RAM $4004 (screen base = RAMtop-0x2000)
-extern uint16_t zxPraeEnd;    // LE word at RAM $4008 (RAMtop)
-extern uint8_t zxPraeData[4]; // first 4 bytes at the screen base
-
 // ZX48K custom-ROM loader stage label (rfix4): written by the menu loader
 // before each step, printed persistently in the menu header row 1. Declared
-// here like the PRAE exports so the VGA/HDMI main files can read it too.
+// here so the VGA/HDMI main files can read it too.
 extern const char* zxRomLoadStage;
 
 class ZxSpectrum {
@@ -202,19 +188,6 @@ private:
   uint8_t _hc88Vram[1 << 14];
   uint8_t _hc88Latch;
   bool _hc88If1Paged;
-#if PICO_RP2350
-  // PRAE (phase 1; reference prae_z80_disasm.txt):
-  // _praeLatch is the value last OUT to port $80 (low-byte decode: the ROM
-  // writes it at boot (0x40, site 0x31B5) and steps it per scan tick
-  // (0x39D2-0x39D9, value = (0x4010)+1 = 0x40-0x4E); bit 7 is also driven
-  // alone by the tape pulse routines (0x3735/0x3B42-0x3B54), so a row
-  // select is only honoured with bit 6 set and bit 7 clear. Row index =
-  // low 3 bits (0x40-0x47 -> rows 0-7; 0x48-0x4E alias rows 0-6 idle).
-  // _praeKeys[8] holds the 8x5 calibrated matrix state, bit 0-4 = column
-  // (idle = 0, pressed = 1; readIO returns the complement).
-  uint8_t _praeLatch;
-  uint8_t _praeKeys[8];
-#endif
   // HC88 diag counters (volatile, small, strippable; TIM-diag style,
   // cumulative across resets like the TIM counters):
   volatile uint32_t _hc88LatchWr = 0;  // writes to the motherboard latch port ((port & 0xC1) == 0x81)
@@ -473,26 +446,6 @@ private:
       return 0xFF;
     }
 #endif
-    // PRAE: the keyboard/tape register decodes on A0-A7 = 0x80 only. The ROM
-    // uses BOTH forms - IN A,(0x80) (0xDB 80, sites 0x3801/0x396D/0x3B64...,
-    // bus address 0x??80 with the tape lines sampling A) and IN A,(C) with
-    // BC=0x0080 (0xED 78, sites 0x3279/0x3299/0x32FC/0x3488/0x34AB) - so the
-    // hook must mask, never exact-match. Bits 0-4 = the five columns of the
-    // row latched by the last row-select OUT (active-low when pressed, idle
-    // all high), bits 6/7 = tape lines idle-high this phase (real
-    // pulse-width tape is deferred to phase 3).
-#if PICO_RP2350
-    if (_type == ZxSpectrumPrae && (address & 0x00FF) == 0x0080) {
-      // Row decode calibrated from the ROM: the interrupt handler steps the
-      // row counter 0x4010 through 0x40-0x4E (0x31B5 init, 0x39D2-0x39D9
-      // stepper) and the key table at 0x3634 is indexed col*8+row (only
-      // D=0..7 select table rows), so the row is the low 3 bits of the
-      // latch (0x48-0x4E are pull-up aliases of rows 0-6, matching idle).
-      const uint8_t row = _praeLatch & 0x07;
-      const uint8_t cols = _praeKeys[row] & 0x1F;
-      return (~cols & 0x1F) | 0xC0;
-    }
-#endif
     // HC88 reads (fuse hc88.c:94-101 + machines_periph.c:257-260): the FDC
     // ports are decoded EXACTLY on the low byte (periph mask 0x00FF) - $DD
     // is the i8272 main status register, $DF the data (read) port and $E7
@@ -671,19 +624,6 @@ inline void writeIO(uint16_t address, uint8_t value)
       applyTimsMap();
       // diag6: every TIM-mode latch write goes through this exit
       timsOpPush(address, value);
-      return;
-    }
-#endif
-    // PRAE: OUT (0x80) presents A on A8-A15 (OUT (nn) high byte = A), so the
-    // writes land on 0x4080 (init, A=0x40), 0x4180-0x4F80 (stepper) and
-    // 0x??80 for the tape pulse toggles - the latch must match the low byte
-    // too. The tape pulse routines (0x3735/0x3B42-0x3B54) also toggle bit 7
-    // alone on this port, so only a value with bit 6 set and bit 7 clear is
-    // treated as a row select (boot init writes 0x40, the scan stepper
-    // writes 0x40-0x4E); the row index is the low 3 bits.
-#if PICO_RP2350
-    if (_type == ZxSpectrumPrae && (address & 0x00FF) == 0x0080) {
-      if ((value & 0x40) && !(value & 0x80)) _praeLatch = value;
       return;
     }
 #endif
@@ -932,7 +872,6 @@ inline void writeIO(uint16_t address, uint8_t value)
   void applyPlus3Map();
 #if PICO_RP2350
   void applyTimsMap();
-  void applyPraeMap();
 #endif
   void applyHc88Map();
   // 48K images run on the TURBO-SPECTRUM clone while that machine is selected
@@ -1025,19 +964,6 @@ public:
     // switches to a main-RAM bank). Bit 4 of the latch (hires) is stored
     // but not decoded this phase.
     if (_type == ZxSpectrumHc88) return (uint8_t*)_hc88Vram;
-#if PICO_RP2350
-    // PRAE: RAM-indirect bitmap. The screen base is RUNTIME: the 16-bit
-    // little-endian word at RAM $4004 (the ROM computes RAMtop-0x2000 there;
-    // our 48K RAM config resolves it to $E000). The bitmap is the 8K span
-    // [base, base+0x2000) = 256 scanlines x 32 bytes linear (base is always
-    // RAMtop-0x2000 with RAMtop <= $10000, so the span fits the _RAM[1..3]
-    // 48K pool at $4000-$FFFF as a linear offset). The ROM itself embeds its
-    // glyphs into the bitmap, so the raster is a raw linear framebuffer.
-    if (_type == ZxSpectrumPrae) {
-      const uint16_t base = _RAM[1][4] | (_RAM[1][5] << 8); // word at RAM $4004
-      return (uint8_t*)&_RAM[1] + (base - 0x4000);
-    }
-#endif
     // HC2000: VideoBase (HcMemory.cs) follows latch 7E bit 3 — CP/M shows the
     // screen from physical 0xC000 (_RAM[0]), otherwise physical 0x4000 (_RAM[5]).
     if (_type == ZxSpectrumHc2000) return (uint8_t*)&_RAM[(_hcLatch7e & 8) ? 0 : 5];
@@ -1057,24 +983,6 @@ public:
   inline uint8_t* cubzVram() { return (unsigned char*)&_RAM[4]; }
   inline uint8_t cubzScroll() { return _cubzScroll; }
   void cubzKey(uint8_t ascii);
-  // PRAE: 256x256 linear monochrome bitmap (32 B/scanline; base = run-time
-  // 16-bit word at RAM $4004 = RAMtop-0x2000).
-  inline bool prae() { return _type == ZxSpectrumPrae; }
-  inline uint8_t* praeVram() {
-    const uint16_t base = _RAM[1][4] | (_RAM[1][5] << 8); // word at RAM $4004
-    zxPraeBase = base;
-    zxPraeEnd = _RAM[1][8] | (_RAM[1][9] << 8);           // word at RAM $4008
-    uint8_t* p = (uint8_t*)&_RAM[1] + (base - 0x4000);
-    zxPraeData[0] = p[0];
-    zxPraeData[1] = p[1];
-    zxPraeData[2] = p[2];
-    zxPraeData[3] = p[3];
-    return p;
-  }
-  // ASCII key press/release mapped into the 8x5 matrix (first-pass table,
-  // decoded column-major from the ROM key table at 0x3632; flag: hardware
-  // calibration pending).
-  void praeKey(uint8_t ascii, bool down);
   bool cubzInsertDisk(uint8_t drive, CobraDiskMedia *media);
   void cubzEjectDisk(uint8_t drive) { cubzInsertDisk(drive, 0); }
   inline uint8_t* cobraVram() { return (unsigned char*)&_RAM[5]; }
@@ -1112,7 +1020,8 @@ public:
   inline volatile uint8_t hc88LatchLast() { return _hc88LatchLast; }
   inline uint8_t* memPtr(uint32_t i) { return (unsigned char*)&_RAM[i]; }
   // Custom 48K ROM buffer access (menu ROM chooser copies the image here;
-  // the buffer is allocated on the heap on first use)
+  // the buffer is allocated on first use - a static pool on RP2350, the heap
+  // on RP2040)
   inline uint8_t* customRom() {
 #if PICO_RP2350
     if (!_customRom) _customRom = _customRomBuf;

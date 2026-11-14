@@ -36,15 +36,6 @@ void __not_in_flash_func(zx_prepare_scanvideo_scanline_cubz)(
   uint8_t scroll
 );
 
-// PRAE 256x256 linear monochrome bitmap (32 bytes/scanline), drawn 2x wide
-// (512 output px) and vertically 1:2 over 240 lines (top 16 bitmap lines
-// cropped, see the renderer comment).
-void __not_in_flash_func(zx_prepare_scanvideo_scanline_prae)(
-  struct scanvideo_scanline_buffer *scanline_buffer,
-  uint32_t y,
-  uint8_t* vram
-);
-
 void __not_in_flash_func(zx_prepare_scanvideo_blankline)(
   struct scanvideo_scanline_buffer *scanline_buffer
 );
