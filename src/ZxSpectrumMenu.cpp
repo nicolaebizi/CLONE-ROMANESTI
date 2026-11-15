@@ -997,6 +997,18 @@ ZxSpectrumMenu::ZxSpectrumMenu(
     // often never repainted before the machine hung.
     zxRomLoadStage = "ROM: open";
     if (isCustom48kRom(finfo->fsize, finfo->fname)) {
+      // Aliasing guard (diag9): the custom-ROM buffer IS _RAM pool bank 7,
+      // which on the 128K/+3/+3s machines is the SHADOW SCREEN bank (7FFD
+      // bit3) and on the HC2000 the IF1 shadow ROM. Copying an image into it
+      // while such a machine is live corrupts whatever uses bank 7 (e.g. a
+      // +3s session with 7FFD=0xFE would show the ROM bytes as the screen).
+      // Only the 48K machine can ever boot the image, so only accept the
+      // copy while it is the active machine.
+      if (_zxSpectrum->type() != ZxSpectrum48k) {
+        zxRomLoadStage = "ROM: switch to 48K first";
+        _wiz.pop(true);
+        return;
+      }
       zxRomLoadStage = "ROM: alloc";
       uint8_t *rom = _zxSpectrum->customRom();
       if (rom) {
@@ -1006,9 +1018,8 @@ ZxSpectrumMenu::ZxSpectrumMenu(
         delete is;
         if (n == 16384) {
           _zx48kRomName = finfo->fname;
-          // Already running the 48K machine: reset immediately so the custom
-          // ROM boots. Any other active machine just keeps the buffer stored
-          // (it takes effect when the user switches to 48K).
+          // Already running the 48K machine (guaranteed by the guard above):
+          // reset immediately so the custom ROM boots.
           if (_zxSpectrum->type() == ZxSpectrum48k) {
             zxRomLoadStage = "ROM: reset";
             _zxSpectrum->reset(ZxSpectrum48k);
@@ -1478,21 +1489,137 @@ _audioOutOptions.addOption(_audioHdmiOp.addQuickKey(getQuickKey(audioOutQuickKey
 #else
      pen->printAt(0, 0, false, "ZX Spectrum 48K/128K by fruit-bat");
 #endif
-#ifdef ZX_VIDEO_AUTO_DETECT
-     // One-line report of the boot-time VGA/HDMI auto-detect decision.
-     // It shares row 1 with the "Built for" line: the old row-2 print
-     // was covered by the first menu option row. The raw pin read is
-     // no longer printed (rule hardware-validated); the
-     // zxVideoAutoDetectPinsRaw global stays exported in VideoAutoDetect
-     // for future debugging.
-     pen->printAtF(0, 1, false, "Built for %s | Video: %s",
-        PICO_MCU, zxVideoAutoDetectName());
-#else
-     pen->printAtF(0, 1, false, "Built for %s on %s",
-        PICO_MCU,
-        __DATE__
-      );
+     // diag8: live +3s hang probe on row 1. Kept OUTSIDE the
+     // ZX_VIDEO_AUTO_DETECT gate on purpose: that macro only exists in the
+     // VGA_HDMI_AUTO target (src/vgahdmi), while the +3s test machine runs
+     // the plain VGA_I2S_AUDIO build (src/vga), where the print compiled
+     // out and the binary stayed byte-identical to the pre-diag build.
+     // Repainted every frame in menu mode, so with the +3s hung the user
+     // opens the menu and reads the frozen PC and the internal states of
+     // the three paging latches (1FFD/7FFD/7F7E).
+      // diag9: " S%d" = the _RAM pool bank the VGA raster is actually reading
+      // (5 = normal screen, 7 = shadow screen; screenPtr() follows 7FFD bit3
+      // live) and " P%04X" = the low 16 bits of the first screen byte pointer
+      // (bank 5 vs bank 7 differ by 0x8000 there). With 7FFD=0xFE (bit3=1) a
+      // healthy renderer must print S7; S5 means the page logic is broken.
+      // diag11: " D7:%02X" = the $DF7E latch state (bit3 = C000->shadow
+      // override). Suspected stuck-bit3 hang after the loader EXIT failed
+      // to restore it; full line stays well under the 80-col frame.
+      if (_zxSpectrum->type() == ZxSpectrumPlus3s) {
+        pen->printAtF(0, 1, false, "s3 PC:%04X 1F:%02X 7F:%02X 7E:%02X D7:%02X S%d P%04X",
+          _zxSpectrum->dbgZ80Pc(),
+          _zxSpectrum->dbgPlus3s1ffd(),
+          _zxSpectrum->dbgPlus3s7ffd(),
+          _zxSpectrum->dbgPlus3s7f7e(),
+          _zxSpectrum->dbgPlus3sDf7e(),
+          _zxSpectrum->dbgScreenPage(),
+          _zxSpectrum->dbgScreenAddr());
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+        // diag11: last 5 +3s port events from the 256-entry write/read ring,
+        // newest first (idx-5..idx-1, oldest at the left), so the user can
+        // see further back through the IN-modify-OUT interplay between the
+        // stock ROM paging loops and the latch emulation at the hang point.
+        // '=' = OUT, '<' = IN (the IN values matter). Each entry renders as
+        // "%04X%c%02X" = 9 cols, 5 entries + separators = 49 cols with the
+        // "L:" prefix = 51 cols, clear of the 80-col frame edge. Parent rows
+        // 2-3 are taken by the always-on _devices child (Clk/Vcore + USB
+        // lines) and the wizard starts at row 6, so the ring goes on row 4.
+        // diag12: a second line "L2:" on parent row 5 (free: between the
+        // _devices child on rows 2-3 and _wiz at row 6, ZxSpectrumMenu.cpp
+        // ctor) shows the same format for idx-45..idx-41, a window 40 events
+        // further back that covers the loader's mid-sequence: the old
+        // 24-entry ring only survived ~5 events because the boot's paging
+        // writes overwrote the loader phase before the hang.
+        const auto *s3ops = _zxSpectrum->plus3sOps();
+        const uint8_t s3n = _zxSpectrum->plus3sOpIdx();
+        pen->printAtF(0, 4, false, "L:%04X%c%02X %04X%c%02X %04X%c%02X %04X%c%02X %04X%c%02X",
+          s3ops[(uint8_t)(s3n - 5) & 255].port,
+          s3ops[(uint8_t)(s3n - 5) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 5) & 255].val,
+          s3ops[(uint8_t)(s3n - 4) & 255].port,
+          s3ops[(uint8_t)(s3n - 4) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 4) & 255].val,
+          s3ops[(uint8_t)(s3n - 3) & 255].port,
+          s3ops[(uint8_t)(s3n - 3) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 3) & 255].val,
+          s3ops[(uint8_t)(s3n - 2) & 255].port,
+          s3ops[(uint8_t)(s3n - 2) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 2) & 255].val,
+          s3ops[(uint8_t)(s3n - 1) & 255].port,
+          s3ops[(uint8_t)(s3n - 1) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 1) & 255].val);
+        pen->printAtF(0, 5, false, "L2:%04X%c%02X %04X%c%02X %04X%c%02X %04X%c%02X %04X%c%02X",
+          s3ops[(uint8_t)(s3n - 45) & 255].port,
+          s3ops[(uint8_t)(s3n - 45) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 45) & 255].val,
+          s3ops[(uint8_t)(s3n - 44) & 255].port,
+          s3ops[(uint8_t)(s3n - 44) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 44) & 255].val,
+          s3ops[(uint8_t)(s3n - 43) & 255].port,
+          s3ops[(uint8_t)(s3n - 43) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 43) & 255].val,
+          s3ops[(uint8_t)(s3n - 42) & 255].port,
+           s3ops[(uint8_t)(s3n - 42) & 255].isRead ? '<' : '=',
+           s3ops[(uint8_t)(s3n - 42) & 255].val,
+           s3ops[(uint8_t)(s3n - 41) & 255].port,
+           s3ops[(uint8_t)(s3n - 41) & 255].isRead ? '<' : '=',
+           s3ops[(uint8_t)(s3n - 41) & 255].val);
+        // diag13: a third line "L3:" answering the current hang question
+        // (7E reads 0x10 = shadow bit2 clear): it shows the LAST ring entry
+        // whose port == $7F7E, then the events AFTER it in chronological
+        // order. If the last 7F7E event is "=14" followed by no further
+        // 7F7E event, the loader's final OUT 7F7E,$14 landed and nothing
+        // rewrote the latch -> the 0x10 readout must come from our apply/
+        // reset path. If it shows "=10" last, or a later 7F7E "=10", his
+        // boot rewrote the latch after the loader. "=14 then: <... >" with
+        // a 7F7E IN afterwards would show a stale readback. Format keeps
+        // the L/L2 convention: '=' = OUT, '<' = IN. Placed on parent row
+        // 24: the _wiz child rect spans rows 6-23 (_explorerRows(18) x
+        // _explorerRowsPerFile(1)) and PicoWin::repaint pen->clear()s the
+        // whole child rect, so anything on rows 6-23 would be erased; row
+        // 24 is the first clear row above the row-29 footer. Scans all 256
+        // ring slots newest-first (zero-init slots have port=0, so a
+        // not-yet-filled ring can never false-match $7F7E).
+        uint8_t s3off7e = 0;      // depth of the newest 7F7E entry: 0 = it IS the newest event, 255 = oldest slot
+        bool s3found7e = false;
+        for (uint16_t j = 0; j < 256; ++j) {
+          if (s3ops[(uint8_t)(s3n - 1 - j) & 255].port == 0x7F7E) {
+            s3off7e = (uint8_t)j; s3found7e = true; break;
+          }
+        }
+        if (s3found7e) {
+          const uint8_t p7 = (uint8_t)(s3n - 1 - s3off7e) & 255;
+          pen->printAtF(0, 24, false, "L3:7F7E%c%02X then:",
+            s3ops[p7].isRead ? '<' : '=', s3ops[p7].val);
+          int32_t s3c = 16;
+          // up to 4 events after it (fewer if it is the newest event)
+          for (uint8_t k = 1; k <= 4 && k <= s3off7e; ++k) {
+            const auto &s3e = s3ops[(uint8_t)(p7 + k) & 255];
+            pen->printAtF(s3c, 24, false, " %04X%c%02X",
+              s3e.port, s3e.isRead ? '<' : '=', s3e.val);
+            s3c += 8;
+          }
+        }
+        else {
+          pen->printAt(0, 24, false, "L3:none");
+        }
 #endif
+      }
+     else {
+#ifdef ZX_VIDEO_AUTO_DETECT
+       // One-line report of the boot-time VGA/HDMI auto-detect decision.
+       // The raw pin read is no longer printed (rule hardware-validated);
+       // the zxVideoAutoDetectPinsRaw global stays exported in
+       // VideoAutoDetect for future debugging.
+       pen->printAtF(0, 1, false, "Built for %s | Video: %s",
+          PICO_MCU, zxVideoAutoDetectName());
+#else
+       pen->printAtF(0, 1, false, "Built for %s on %s",
+          PICO_MCU,
+          __DATE__
+        );
+#endif
+     }
 
      // Persistent ROM-load stage (rfix4): printed in the row-1 area, right
      // of the "Built for ..." report, so the last loader step stays

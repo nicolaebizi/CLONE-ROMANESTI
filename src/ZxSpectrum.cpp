@@ -450,6 +450,13 @@ void ZxSpectrum::reset(ZxSpectrumType type)
     memset(_timsRAM, 0, sizeof(_timsRAM));
     memset(_timsVram, 0, sizeof(_timsVram));
   }
+  // +3s (phase 2a): zero the shadow-RAM banks (NEWEPR loader target), stored
+  // in the TIM-S pool's spare banks 8-11 (machine-exclusive pools -
+  // the TIM machine zeroes the whole pool on its own reset, so no state
+  // bleeds across machine switches either way).
+  if (type == ZxSpectrumPlus3s) {
+    memset(&_timsRAM[8], 0, 4 * (1 << 14));
+  }
 #endif
   // HC88: the shared base _RAM pool (including the HC88 main RAM in its
   // banks 0-3) is already memset above for every machine reset; zero the
@@ -1506,6 +1513,38 @@ void ZxSpectrum::applyPlus3Map() {
 
 // ZX Spectrum +3s: identical paging scheme to the plain +3 (ports $1FFD and
 // $7FFD), but the four ROM pages come from the +3s ROM set (NEWEPR0-3).
+//
+// Phase 2a (NEWEPR.GEN semantics, cs port tables): the 4x16K shadow-RAM
+// pages for Cristian Secară's NEWEPR loader, stored in the TIM-S pool's
+// spare banks 8-11 (page index n = pool bank 8+n; the "12-15" numbering used
+// elsewhere is only our internal label).
+//
+// $7F7E bits0-3 (one-hot; bit n set): ROM SOCKET n is replaced by shadow
+// pool bank 8+n (internal label 12+n) - only in normal paging mode ($1FFD
+// bit0 clear; in +3 special mode the slot is banked RAM with no ROM to
+// replace). The bit applies when that socket is the one currently paged at
+// $0000 (rom = (1FFD&4)?2:0 | 7FFD bit4), e.g. 7F7E=$14 (bit2) serves pool
+// bank 10 = internal page 14 (the +3DOS image copied by EPR2) whenever the
+// system pages ROM2, while ROM0/1/3 keep the stock NEWEPR ROMs. Writes into
+// the shadowed window are gated by $7F7E bit4 (writeByte mirrors this
+// condition exactly).
+//
+// $DF7E bit3: the $C000-$FFFF slot selects the shadow banks instead of the
+// regular 128K bank - pool bank = 8 + ($7FFD & 3), the same index the $7F7E
+// one-hot uses, so DF7E and 7F7E are mutually consistent (e.g. the loader's
+// MMNMI entry copies with bank 0 and the NMI re-enters it via 7F7E bit0 -
+// both land in bank 8). This is exactly what NEWEPR.GEN does: EPR0-3 copy
+// $8000->$C000 with bank 4-7 (banks 8-11) and MMNMI with bank 0 (bank 8),
+// after setting DF7E bit3. The bit takes precedence over both the normal
+// bank select and the special row select at $C000, and applies in either
+// paging mode.
+//
+// The four 16K shadow pages physically live in the RP2350-only TIM-S pool's
+// spare banks 8-11: the pools are machine-exclusive (TIM uses pages 0-11 +
+// the separate VRAM; the +3s uses _RAM banks 0-7 + the shadow), and each
+// machine zeroes its own area on reset, so no state can bleed across a
+// machine switch. RP2040 builds keep the phase 1 behaviour (the latches
+// never act on the map).
 void ZxSpectrum::applyPlus3sMap() {
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   if (_plus3Latch1ffd & 1) {
@@ -1520,11 +1559,39 @@ void ZxSpectrum::applyPlus3sMap() {
     static const uint8_t *const roms[4] = {
       plus3s_0_rom, plus3s_1_rom, plus3s_2_rom, plus3s_3_rom
     };
-    setPageaddr(0, (uint8_t*)roms[rom]);
+#if PICO_RP2350
+    // Phase 2a fix (boot hang): one-hot bit n selects ROM SOCKET n for
+    // replacement by shadow pool bank 8+n - not "any bit replaces the
+    // currently paged ROM". Decoded from the NEWEPR.GEN source (EPR0-3 copy
+    // the ROM images into shadow banks 8+(7FFD&3) = banks 8-11, i.e. one
+    // shadow page per ROM slot). With 7F7E=$14 (bit4 + bit2) the loader's
+    // own RESET (OUT 1FFD,#10, OUT 7FFD,#00, JP 0) leaves ROM0 selected and
+    // bit0 clear, so the boot must execute the STOCK 48K ROM at $0000; only
+    // when the +3 system pages in ROM2 (1FFD bit2) is slot 2 replaced by
+    // bank 10 = internal page 14 (the copied +3DOS image). Replacing page 0
+    // unconditionally executed the raw +3DOS image at JP 0 (8x NOP then the
+    // "PLUS3DOS" identity bytes as code) and hung the machine with a white
+    // border. Opcode fetches share this page table (memaddr()), so the
+    // mapping applies to fetches as well.
+    if (_plus3sLatch[0] & 0x0F) {
+      if ((_plus3sLatch[0] >> rom) & 1)
+        setPageaddr(0, (uint8_t*)&_timsRAM[8 + rom]);
+      else
+        setPageaddr(0, (uint8_t*)roms[rom]);
+    }
+    else
+#endif
+    {
+      setPageaddr(0, (uint8_t*)roms[rom]);
+    }
     setPageaddr(1, (uint8_t*)&_RAM[5]);
     setPageaddr(2, (uint8_t*)&_RAM[2]);
     setPageaddr(3, (uint8_t*)&_RAM[_portMem & 7]);
   }
+#if PICO_RP2350
+  if (_plus3sLatch[2] & 0x08)
+    setPageaddr(3, (uint8_t*)&_timsRAM[8 + (_portMem & 3)]);
+#endif
 #else
   // Without the ROM assets this machine type is not exposed by the menu.
   setPageaddr(0, (uint8_t*)zx_128k_rom_1);
