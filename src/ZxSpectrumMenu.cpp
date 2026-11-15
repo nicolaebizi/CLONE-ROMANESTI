@@ -15,6 +15,7 @@
 #include "ZxSpectrumAudioVol.h"
 #include "ZxSpectrumAudioDriver.h"
 #include "ZxSpectrumVideoDriver.h"
+#include "ZxSpectrumDualJoystick.h"
 #ifdef ZX_VIDEO_AUTO_DETECT
 #include "VideoAutoDetect.h"
 #endif
@@ -1458,7 +1459,7 @@ _audioOutOptions.addOption(_audioHdmiOp.addQuickKey(getQuickKey(audioOutQuickKey
     _wiz.pop(true);
   };
 
-  onPaint([](PicoPen *pen) {
+  onPaint([=](PicoPen *pen) {
 #ifdef ZX_PLATFORM
      pen->printAtF(0, 0, false, "ZX Spectrum 48K/128K by fruit-bat on %s", ZX_PLATFORM);
 #else
@@ -1484,6 +1485,27 @@ _audioOutOptions.addOption(_audioHdmiOp.addQuickKey(getQuickKey(audioOutQuickKey
      // of the "Built for ..." report, so the last loader step stays
      // visible across repaints until the next ROM load replaces it.
      if (zxRomLoadStage) pen->printAt(40, 1, false, zxRomLoadStage);
+
+#ifdef NESPAD_ENABLE
+     // Live joystick probe (release feature): while the main menu has the
+     // Joystick option focused (row 7, option index 6, see the addOption
+     // order below), row 1 shows the raw joystick bytes sampled on every
+     // menu repaint: K = merged Kempston byte (HID | NES pad), N = NES pad
+     // bits, H = HID joystick bits. Printed at col 57, clear of the ROM
+     // stage text (max col 56) and within the 80-col frame. NES pad input
+     // (open-drain DATA, pull-ups in the nespad driver) is hardware-
+     // validated on MURMULATOR2 via an ESP32 NES-protocol adapter: it works
+     // both in this menu and in gameplay.
+      if (_main.focus() == 6) {
+        ZxSpectrumJoystick *joy = _zxSpectrum->joystick();
+        ZxSpectrumDualJoystick *dj =
+          (ZxSpectrumDualJoystick *)joy; // NESPAD_ENABLE builds use the dual joystick
+        uint8_t k = joy ? joy->kempston() : 0;
+        uint8_t n = dj ? dj->joy1R() : 0;
+        uint8_t h = dj ? dj->joy1L() : 0;
+        pen->printAtF(57, 1, false, "J:K%02X N%02X H%02X", k, n, h);
+      }
+#endif
 
      pen->printAt(0, SZ_FRAME_ROWS-1, false, "F1 to exit menu");
      pen->printAt(SZ_FRAME_COLS-14, SZ_FRAME_ROWS-1, false, "ESC to go back");

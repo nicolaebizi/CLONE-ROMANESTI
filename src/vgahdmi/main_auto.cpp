@@ -254,6 +254,10 @@ void __not_in_flash_func(main_loop)(){
       picoWinHidKeyboard.processKeyRepeat();
       if (frames != _frames) {
         frames = _frames;
+        // Menu mode: force a full repaint every frame so live readouts
+        // (e.g. the row-7 joystick probe in the menu header) update
+        // without any key/joystick event.
+        picoRootWin.repaint();
         picoDisplay.refresh();
       }
     }

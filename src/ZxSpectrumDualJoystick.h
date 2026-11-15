@@ -22,4 +22,9 @@ public:
   virtual bool __not_in_flash_func(isConnectedR)() { return _joystick1->isConnectedR(); };
   virtual uint8_t __not_in_flash_func(joy1)(){ return _joystick1->joy1() | _joystick2->joy1(); };
 
+  // Per-source raw joy1 bytes for the menu live joystick probe:
+  // joy1L() = joystick1 (HID), joy1R() = joystick2 (NES pad).
+  virtual uint8_t __not_in_flash_func(joy1L)(){ return _joystick1->joy1(); };
+  virtual uint8_t __not_in_flash_func(joy1R)(){ return _joystick2->joy1(); };
+
 };
