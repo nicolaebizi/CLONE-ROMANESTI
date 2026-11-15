@@ -54,6 +54,7 @@ private:
   ZxSpectrumSettings *_zxSpectrumSettings;
   InputStream* _tis;
 
+  PicoQuickKeyAscii _k0;
   PicoQuickKeyAscii _k1;
   PicoQuickKeyAscii _k2;
   PicoQuickKeyAscii _k3;
@@ -207,6 +208,8 @@ private:
   PicoOptionText _resetCubzOp;
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   PicoOptionText _resetPlus3Op;
+  // ZX Spectrum +3s (machine #10): Cristian Secară's +3 with his ROMs
+  PicoOptionText _resetPlus3sOp;
 #endif
 
   // CoBra 1: disk drives A:-D: on the floppy interface, mainboard jumpers

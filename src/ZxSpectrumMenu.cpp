@@ -199,7 +199,7 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _zxSpectrumSettings(settings),
   _tis(0),
 
-  _k1('1'), _k2('2'), _k3('3'), _k4('4'), _k5('5'), _k6('6'), _k7('7'), _k8('8'), _k9('9'), 
+  _k0('0'), _k1('1'), _k2('2'), _k3('3'), _k4('4'), _k5('5'), _k6('6'), _k7('7'), _k8('8'), _k9('9'), 
   _kV('v'), _kK('k'), _kS('s'), _kQ('q'), _kC('c'), _kD('D'),
   // Disk menu (D) rows 10-13: the CUB-Z / HC88 rows reuse the shared letter
   // quick keys (_kC/_kD are the main-menu CoBra / Disk keys - quick keys are
@@ -296,12 +296,13 @@ ZxSpectrumMenu::ZxSpectrumMenu(
 
   _reset(0, 0, _wizCols,
 #if PICO_RP2350
-    // One extra row for the RP2350-only TIM S Plus reset entry
-    // (the list scrolls anyway; HC88 is present on every platform)
-    9 * SZ_MENU_SEP,
+    // One extra row for the RP2350-only TIM S Plus reset entry, plus the
+    // +3s entry (the list scrolls anyway; HC88 is present on every platform)
+    // 48K/128K/Turbo/HC2000/CoBra/+3/TIM/CUB-Z/HC88/+3s
+    10 * SZ_MENU_SEP,
 #else
-    // 48K/128K/Turbo/HC2000/CoBra/+3/CUB-Z/HC88
-    8 * SZ_MENU_SEP,
+    // 48K/128K/Turbo/HC2000/CoBra/+3/CUB-Z/HC88/+3s
+    9 * SZ_MENU_SEP,
 #endif
     _menuRowsPerItem),
   _reset48kOp("Reset 48K ZX Spectrum"),
@@ -316,6 +317,7 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _resetCubzOp("Reset CUB-Z"),
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   _resetPlus3Op("Reset ZX Spectrum +3"),
+  _resetPlus3sOp("Reset ZX Spectrum +3s"),
 #endif
 
   _cobra(0, 0, _wizCols, 9, _menuRowsPerItem),
@@ -494,6 +496,7 @@ ZxSpectrumMenu::ZxSpectrumMenu(
       case ZxSpectrumHc2000: m = "HC2000" ; break;
       case ZxSpectrumCobra: m = "CoBra 1" ; break;
       case ZxSpectrumPlus3: m = "ZX Spectrum +3" ; break;
+      case ZxSpectrumPlus3s: m = "ZX Spectrum +3s" ; break;
 #if PICO_RP2350
       case ZxSpectrumTimsPlus: m = "TIM S Plus" ; break;
 #endif
@@ -723,6 +726,11 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   // type + memory map + VRAM video only; disk mounts live in the HC2000
   // disk menu below.
   _reset.addOption(_resetHc88Op.addQuickKey(&_k9));
+  // ZX Spectrum +3s (machine #10): row 10, quick key '0' (free since the
+  // PRAE machine was abandoned). Uses the +3 drive/disk machinery.
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  _reset.addOption(_resetPlus3sOp.addQuickKey(&_k0));
+#endif
   _resetCubzOp.toggle([=]() {
     _snapName.clear();
     _zxSpectrum->reset(ZxSpectrumCubz);
@@ -838,6 +846,11 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _resetPlus3Op.toggle([=]() {
     _snapName.clear();
     _zxSpectrum->reset(ZxSpectrumPlus3);
+    _wiz.pop(true);
+  });
+  _resetPlus3sOp.toggle([=]() {
+    _snapName.clear();
+    _zxSpectrum->reset(ZxSpectrumPlus3s);
     _wiz.pop(true);
   });
 #endif

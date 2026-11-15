@@ -16,6 +16,7 @@
 #include "hc88_rom.h"
 #ifdef ZX_PLUS3_ROM_AVAILABLE
 #include "plus3_roms.h"
+#include "plus3s_rom.h"
 #endif
 
 #include <string.h>
@@ -246,10 +247,12 @@ void ZxSpectrum::transmute(ZxSpectrumType type) {
       break;
     case ZxSpectrum128k:
     case ZxSpectrumPlus3:
+    case ZxSpectrumPlus3s:
     default:
       setPageaddr(0, (uint8_t*)zx_128k_rom_1);
       _portMem = 0;
       _plus3Latch1ffd = 0;
+      _plus3sLatch[0] = _plus3sLatch[1] = _plus3sLatch[2] = _plus3sLatch[3] = 0;
       break;
   }
 }
@@ -413,7 +416,7 @@ void ZxSpectrum::reset(ZxSpectrumType type)
   transmute(type);
   // HC2000: reset the i8272 controller state (mounted media is kept)
   _hcFdc.softReset();
-  _hcFdc.setPlus3Mode(type == ZxSpectrumPlus3);
+  _hcFdc.setPlus3Mode(type == ZxSpectrumPlus3 || type == ZxSpectrumPlus3s);
 #if PICO_RP2350
   // TIM-S Plus: FDC soft reset (drive A/B media stays mounted across resets,
   // like HC2000); the motor line off follows the reset $1FFD = 0.
@@ -463,6 +466,7 @@ void ZxSpectrum::reset(ZxSpectrumType type)
   if (type == ZxSpectrumTurbo) applyTurboMap(); // EEPROM mode after RST
   else if (type == ZxSpectrumHc2000) applyHc2000Map(); // ROM half 0 after RST
   else if (type == ZxSpectrumPlus3) applyPlus3Map(); // Plus3 mode
+  else if (type == ZxSpectrumPlus3s) applyPlus3sMap(); // Plus3s mode (own ROMs)
 #if PICO_RP2350
   else if (type == ZxSpectrumTimsPlus) applyTimsMap(); // boot map after RST
 #endif
@@ -1493,6 +1497,36 @@ void ZxSpectrum::applyPlus3Map() {
   }
 #else
   // Without ROM assets this code path is not exposed by the reset menu.
+  setPageaddr(0, (uint8_t*)zx_128k_rom_1);
+  setPageaddr(1, (uint8_t*)&_RAM[5]);
+  setPageaddr(2, (uint8_t*)&_RAM[2]);
+  setPageaddr(3, (uint8_t*)&_RAM[_portMem & 7]);
+#endif
+}
+
+// ZX Spectrum +3s: identical paging scheme to the plain +3 (ports $1FFD and
+// $7FFD), but the four ROM pages come from the +3s ROM set (NEWEPR0-3).
+void ZxSpectrum::applyPlus3sMap() {
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  if (_plus3Latch1ffd & 1) {
+    static const uint8_t allRam[4][4] = {
+      {0, 1, 2, 3}, {4, 5, 6, 7}, {4, 5, 6, 3}, {4, 7, 6, 3}
+    };
+    const uint8_t *banks = allRam[(_plus3Latch1ffd >> 1) & 3];
+    for (uint8_t page = 0; page < 4; page++)
+      setPageaddr(page, (uint8_t*)&_RAM[banks[page]]);
+  } else {
+    const uint8_t rom = (uint8_t)(((_plus3Latch1ffd & 4) ? 2 : 0) | ((_portMem >> 4) & 1));
+    static const uint8_t *const roms[4] = {
+      plus3s_0_rom, plus3s_1_rom, plus3s_2_rom, plus3s_3_rom
+    };
+    setPageaddr(0, (uint8_t*)roms[rom]);
+    setPageaddr(1, (uint8_t*)&_RAM[5]);
+    setPageaddr(2, (uint8_t*)&_RAM[2]);
+    setPageaddr(3, (uint8_t*)&_RAM[_portMem & 7]);
+  }
+#else
+  // Without the ROM assets this machine type is not exposed by the menu.
   setPageaddr(0, (uint8_t*)zx_128k_rom_1);
   setPageaddr(1, (uint8_t*)&_RAM[5]);
   setPageaddr(2, (uint8_t*)&_RAM[2]);

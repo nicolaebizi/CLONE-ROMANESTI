@@ -35,6 +35,12 @@ enum ZxSpectrumType {
   ZxSpectrumCobra,
   // Amstrad +3B (menu item only exposed when ZX_PLUS3_ROM_AVAILABLE is set)
   ZxSpectrumPlus3,
+  // ZX Spectrum +3s (10th computer, machine #10): Cristian Secară's modified
+  // +3 with his own ROM set (NEWEPR0-3) and the custom I/O ports $7F7E/
+  // $BF7E/$DF7E/$EF7E. Phase 1: same memory map / FDC / drives / CP/M as
+  // the plain +3, plus the port readback latches and the $1FFD speed-report
+  // bits. Menu item only exposed when ZX_PLUS3_ROM_AVAILABLE is set.
+  ZxSpectrumPlus3s,
   // TIM S Plus (7th computer; boot-only phase, menu entry + transmute/reset
   // arms compile only under PICO_RP2350 so RP2040 builds are unchanged)
   ZxSpectrumTimsPlus,
@@ -84,6 +90,13 @@ private:
   // D1/D2 = RAM bank selection, D3 = FDC motor, D4 = disk motor). Applied by
   // applyPlus3Map(); ROM page comes from (_plus3Latch1ffd & 4) | 7FFD D4.
   uint8_t _plus3Latch1ffd;
+  // ZX Spectrum +3s (phase 1): readback latches of the four custom ports.
+  // Index 0..3 = $7F7E (ROM/shadow + 48K-lock + H/V border bits), $BF7E
+  // (VRAM control + double-H-res), $DF7E (extended RAM paging), $EF7E
+  // (clock force/video/Kempston). Writes latch the value, IN returns it;
+  // every bit defaults to 0 after reset. Acting on the latched bits
+  // (memory/border/clock) comes in later phases.
+  uint8_t _plus3sLatch[4];
   // Turbo Spectrum: value last OUT to an even port (F5) and the effective
   // mapping config (bits 6:5, CE / SM) applied by applyTurboMap().
   uint8_t _feReg;
@@ -396,7 +409,8 @@ private:
       // ZX Spectrum +3 special paging mode (port $1FFD bit 0): applyPlus3Map()
       // pages RAM banks over $0000-$3FFF, so the low 16 KiB is RAM and must
       // accept writes (all-RAM mode, page 0 maps to _RAM[0]).
-      const bool plus3AllRam = _type == ZxSpectrumPlus3 && (_plus3Latch1ffd & 0x01);
+      const bool plus3AllRam = (_type == ZxSpectrumPlus3 || _type == ZxSpectrumPlus3s) &&
+        (_plus3Latch1ffd & 0x01);
       if (!hcLowRam && !hcIf1Ram && !plus3AllRam && !(_type == ZxSpectrumTurbo && (_feCfg & 0x60) != 0x00)) return;
     }
     // HC2000: with latch D1 the roman overlay is ROM; writes are lost
@@ -504,15 +518,38 @@ private:
     if (_type == ZxSpectrumPlus3 && (address & 0xF002) == 0x3000) {
       return _hcFdc.readData();
     }else
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+    // ZX Spectrum +3s custom I/O (NEWEPR.GEN / cs alternatively-website):
+    // the four motherboard ports decode on the exact 16-bit address and
+    // IN returns the latched value (all bits 0 after reset). Phase 1 is
+    // readback only - the latched bits do not change anything yet. The
+    // +3s ROM2 (+3DOS) delay routines (0x2D00-0x2D99) also read the CPU
+    // clock from bits 5-7 of IN $1FFD (bit5 = 3.5MHz, bit6 = 7MHz, bit7 =
+    // 14MHz): we emulate the 3.5MHz-equivalent speed, so bit5 reads 1 and
+    // bits 6/7 read 0. The plain +3 keeps its old behaviour (open bus).
+    if (_type == ZxSpectrumPlus3s) {
+      switch (address) {
+        case 0x7F7E: return _plus3sLatch[0];
+        case 0xBF7E: return _plus3sLatch[1];
+        case 0xDF7E: return _plus3sLatch[2];
+        case 0xEF7E: return _plus3sLatch[3];
+      }
+      if ((address & 0xF002) == 0x2000) return _hcFdc.readStatus();
+      if ((address & 0xF002) == 0x3000) return _hcFdc.readData();
+      if ((address & 0xF002) == 0x1000) return (_plus3Latch1ffd & 0x1F) | 0x20;
+    }else
+#endif
     if (address == 0xFFFD) {
       return _ay.readData();
     }else
-    if (address == 0x7FFD && (_type == ZxSpectrum128k || _type == ZxSpectrumPlus3)) {
+    if (address == 0x7FFD && (_type == ZxSpectrum128k || _type == ZxSpectrumPlus3 ||
+        _type == ZxSpectrumPlus3s)) {
       // reading #7FFD port is the same as writing #FF into it.
       uint8_t value = 0xFF;
       if ((_portMem & 0x20) == 0) {
         _portMem = value;
         if (_type == ZxSpectrumPlus3) applyPlus3Map();
+        else if (_type == ZxSpectrumPlus3s) applyPlus3sMap();
         else {
           setPageaddr(3, (uint8_t*)&_RAM[value & 7]);
           setPageaddr(0, (uint8_t*)((value & 0x10) ? zx_128k_rom_2 : zx_128k_rom_1));
@@ -693,6 +730,34 @@ inline void writeIO(uint16_t address, uint8_t value)
         _hcFdc.writeDataPc(Z80_PC(_Z80), value);
         return;
       }
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+	  } else if (_type == ZxSpectrumPlus3s) {
+      // Same paging/FDC ports as the plain +3, driven by applyPlus3sMap()
+      // over the +3s ROM set.
+      if ((address & 0xF002) == 0x1000) {
+        if ((_portMem & 0x20) == 0) {
+          _plus3Latch1ffd = value;
+          applyPlus3sMap();
+          _hcFdc.setPlus3Motor((value & 8) != 0);
+        }
+        return;
+      }
+      if ((address & 0xF002) == 0x2000) return; // main status register is read-only
+      if ((address & 0xF002) == 0x3000) {
+        _hcFdc.writeDataPc(Z80_PC(_Z80), value);
+        return;
+      }
+      // Custom motherboard ports (NEWEPR.GEN): exact 16-bit decode, phase 1
+      // = latch only (readback via readIO; the effects land in later
+      // phases). Writes on any other machine type never reach here, so
+      // their behaviour is unchanged.
+      switch (address) {
+        case 0x7F7E: _plus3sLatch[0] = value; return;
+        case 0xBF7E: _plus3sLatch[1] = value; return;
+        case 0xDF7E: _plus3sLatch[2] = value; return;
+        case 0xEF7E: _plus3sLatch[3] = value; return;
+      }
+#endif
 	  }
 	  if (address & 0x0001)
 	  {
@@ -708,12 +773,14 @@ inline void writeIO(uint16_t address, uint8_t value)
   			return;
 	  	} //BFFD
 		
-      if (!(address & 0x8002) && (_type == ZxSpectrum128k || _type == ZxSpectrumPlus3))
+      if (!(address & 0x8002) && (_type == ZxSpectrum128k || _type == ZxSpectrumPlus3 ||
+          _type == ZxSpectrumPlus3s))
    		{
         if ((_portMem & 0x20) == 0) {
           _fc += ((_portMem ^ value) >> 3) & 1;
           _portMem = value;
           if (_type == ZxSpectrumPlus3) applyPlus3Map();
+          else if (_type == ZxSpectrumPlus3s) applyPlus3sMap();
           else {
             setPageaddr(3, (uint8_t*)&_RAM[value & 7]);
             setPageaddr(0, (uint8_t*)((value & 0x10) ? zx_128k_rom_2 : zx_128k_rom_1));
@@ -878,6 +945,7 @@ inline void writeIO(uint16_t address, uint8_t value)
   void applyTurboMap();
   void applyHc2000Map();
   void applyPlus3Map();
+  void applyPlus3sMap();
 #if PICO_RP2350
   void applyTimsMap();
 #endif
