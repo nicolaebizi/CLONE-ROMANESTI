@@ -1216,9 +1216,16 @@ public:
   // fix3 phase 2: TIM-mode IO read counter accessors (strippable later).
   inline volatile uint32_t timsRd2ffd() { return _rd2FFD; }
   inline volatile uint32_t timsRdCfd()  { return _rdCFD; }
+  inline volatile uint32_t timsRdPb()   { return _rdPB; }
+  inline volatile uint32_t timsRdFe()   { return _rdFE; }
+#endif
   // diag8: live +3s CPU/paging readback for the menu header row 1 (strippable
   // later). Z80_PC/Z80_SP reach the emulation core register struct (Z80.h);
   // the latch getters return the internal state of the +3s paging latches.
+  // NOT platform-gated: ZxSpectrumMenu.cpp prints the s3 line on every
+  // machine when the +3s type is selected, and every backing member
+  // (_plus3sLatch/_plus3Latch1ffd/_portMem/screenPtr/_Z80) exists on both
+  // RP2040 and RP2350.
   inline uint16_t dbgZ80Pc() { return Z80_PC(_Z80); }
   inline uint16_t dbgZ80Sp() { return Z80_SP(_Z80); }
   inline uint8_t dbgPlus3s1ffd() { return _plus3Latch1ffd; }
@@ -1238,9 +1245,6 @@ public:
     return (uint8_t)(((uintptr_t)(void*)screenPtr() - (uintptr_t)(void*)_RAM) >> 14);
   }
   inline uint16_t dbgScreenAddr() { return (uint16_t)(uintptr_t)(void*)screenPtr(); }
-  inline volatile uint32_t timsRdPb()   { return _rdPB; }
-  inline volatile uint32_t timsRdFe()   { return _rdFE; }
-#endif
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   // diag10: +3s port-event ring accessors for the menu diag line
   // (strippable later). Entries are consumed newest-first via
