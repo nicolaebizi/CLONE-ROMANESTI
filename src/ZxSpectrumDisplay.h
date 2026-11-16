@@ -25,4 +25,17 @@
 #define DISPLAY_BORDER_PIXELS_LEFT_BLANK (MAX(DISPLAY_BORDER_PIXELS_LEFT - DISPLAY_BORDER_PIXELS_LEFT_COLORED, 0))
 #define DISPLAY_BORDER_PIXELS_RIGHT_BLANK (MAX(DISPLAY_BORDER_PIXELS_RIGHT - DISPLAY_BORDER_PIXELS_RIGHT_COLORED, 0))
 
+// CUB-Z VDT-52S row remap (shared by the VGA scanvideo and the DVI/HDMI
+// scanline encoders): maps output lines 0-239 to the first 250 CUB-Z raster
+// lines with the 10 blank lines of the first ten 10-line text rows dropped.
+// Built once by zx_cubz_lines_init().
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern unsigned char cubz_lines[240];
+void zx_cubz_lines_init(void);
+#ifdef __cplusplus
+}
+#endif
+
 

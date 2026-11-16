@@ -33,4 +33,13 @@ uint32_t *__not_in_flash_func(tmds_encode_border)(
   uint32_t attr      // r3 is the colour attribute
 );
 
+// Colour translation tables (attribute byte -> per-channel b0b1f1f0 nibble)
+// and the TMDS palette (nibble -> 4 x 2-pixel words, see the .S header).
+// Exported for the CUB-Z HDMI scanline encoder.
+extern const uint8_t attr_to_colour_chan_B[256];
+extern const uint8_t attr_to_colour_chan_G[256];
+extern const uint8_t attr_to_colour_chan_R[256];
+// 16 nibbles x 4 two-bit crumbs x 2 words (2 pixels per word).
+extern const uint32_t palettised_2bpp_tables[128];
+
 #endif

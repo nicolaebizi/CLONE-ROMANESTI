@@ -257,12 +257,9 @@ void __not_in_flash_func(zx_prepare_scanvideo_scanline_cobra80)(
 }
 
 // CUB-Z VDT-52S: 512x256 green phosphor raster drawn 1:1 (one CUB-Z pixel per
-// output pixel).  The display has 240 lines, the CUB-Z 256: the CP/M text
-// rows are 10 lines high (7 glyph lines, 3 blank) and 25 of them fill lines
-// 0-249, so the 6 unused bottom lines and the last (blank) line of the first
-// ten rows are dropped - every row stays readable and no glyph line is lost.
-static uint8_t cubz_lines[240];
-static bool cubz_lines_ready = false;
+// output pixel).  The row remap table (cubz_lines) and its builder live in
+// ZxCubzLines.cpp so the DVI/HDMI twin (zx_prepare_hdmi_scanline_cubz) can
+// share them.
 
 void __not_in_flash_func(zx_prepare_scanvideo_scanline_cubz)(
   struct scanvideo_scanline_buffer *scanline_buffer,
@@ -270,14 +267,7 @@ void __not_in_flash_func(zx_prepare_scanvideo_scanline_cubz)(
   uint8_t* vram,
   uint8_t scroll
 ) {
-  if (!cubz_lines_ready) {
-    uint32_t n = 0;
-    for (uint32_t l = 0; l < 250 && n < 240; ++l) {
-      if (l < 100 && (l % 10) == 9) continue;
-      cubz_lines[n++] = (uint8_t)l;
-    }
-    cubz_lines_ready = true;
-  }
+  zx_cubz_lines_init();
   uint32_t* buf = scanline_buffer->data;
   const uint32_t on = zxd_colour_words[12] & 0xffff;
   const uint32_t off = zxd_colour_words[0] & 0xffff;

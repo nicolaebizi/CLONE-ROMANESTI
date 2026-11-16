@@ -32,6 +32,17 @@ void __not_in_flash_func(zx_prepare_hdmi_scanline_cobra80)(
   uint8_t borderColor
 );
 
+// ICE Felix CUB-Z VDT-52S 512x256 green phosphor raster (TMDS twin of
+// zx_prepare_scanvideo_scanline_cubz): 1bpp line from the 16K VRAM bank 2
+// (_RAM[4]), row-remapped with the shared cubz_lines[] table, scrolled by the
+// $F2 SCROLL latch, bright green on black.
+void __not_in_flash_func(zx_prepare_hdmi_scanline_cubz)(
+  struct dvi_inst *dvi,
+  uint32_t y,
+  uint8_t* vram,
+  uint8_t scroll
+);
+
 #ifdef __cplusplus
 }
 #endif

@@ -50,6 +50,7 @@ set(zxspectrum_st7789_lcd_src
 set(zxspectrum_common_src
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumMouse.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumHidMouse.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxCubzLines.cpp # CUB-Z row remap shared by the VGA and DVI scanline encoders
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumSettings.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumFlashSettings.cpp # Needed for flash settings (not currently working)
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumFileSettings.cpp

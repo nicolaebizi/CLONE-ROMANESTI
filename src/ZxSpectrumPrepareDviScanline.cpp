@@ -208,3 +208,67 @@ void __not_in_flash_func(zx_prepare_hdmi_scanline_cobra80)(
   }
   queue_add_blocking(&dvi->q_tmds_valid, &tmdsbuf);
 }
+
+// ICE Felix CUB-Z VDT-52S: 512x256 green phosphor raster drawn 1:1 (one CUB-Z
+// pixel per output pixel), row-remapped with the shared cubz_lines[] table and
+// scrolled by the $F2 SCROLL latch.  TMDS twin of
+// zx_prepare_scanvideo_scanline_cubz: same 512-wide line from _RAM[4], same
+// margins ((DISPLAY_WIDTH_PIXELS - 512) / 2 black pixels each side), same
+// colours - black background, bright green ink (ZX attribute $C0, matching the
+// VGA's zxd_colour_words[12] on zxd_colour_words[0]).  Encoded one word (2
+// pixels) at a time per channel with the words of the proven
+// palettised_2bpp_tables, selected through the existing
+// attr_to_colour_chan_X tables like tmds_encode_screen does.
+void __not_in_flash_func(zx_prepare_hdmi_scanline_cubz)(
+  struct dvi_inst *dvi,
+  uint32_t y,
+  uint8_t* vram,
+  uint8_t scroll
+) {
+  static uint32_t cubz_words[3][4];
+  static bool cubz_words_ready = false;
+
+  if (!cubz_words_ready) {
+    // Bright green ink ($C0: ink = colour 4 green + bright, paper = black),
+    // translated to the per-channel b0b1f1f0 palette nibbles exactly like
+    // tmds_encode_screen translates an attribute byte.
+    const uint8_t attr = 0xC0;
+    const uint8_t *chan[3] = {
+      attr_to_colour_chan_B, attr_to_colour_chan_G, attr_to_colour_chan_R
+    };
+    for (int plane = 0; plane < 3; ++plane) {
+      const uint32_t *lut =
+        (const uint32_t *)(palettised_2bpp_tables + (chan[plane][attr] << 5));
+      // lut[0] = off/off, lut[1] = left off/right on,
+      // lut[2] = left on/right off, lut[3] = on/on (left pixel = LSB symbol).
+      cubz_words[plane][0] = lut[0];
+      cubz_words[plane][1] = lut[1];
+      cubz_words[plane][2] = lut[2];
+      cubz_words[plane][3] = lut[3];
+    }
+    cubz_words_ready = true;
+  }
+
+  zx_cubz_lines_init();
+
+  uint32_t *tmdsbuf;
+  queue_remove_blocking(&dvi->q_tmds_free, &tmdsbuf);
+  uint32_t *p = tmdsbuf;
+  const uint32_t marginL = DISPLAY_BORDER_PIXELS_LEFT;
+  const uint32_t marginR = DISPLAY_BORDER_PIXELS_RIGHT;
+  const uint8_t *s = vram + ((cubz_lines[y < 240 ? y : 239] + scroll) & 255);
+
+  for (int plane = 0; plane < 3; ++plane) {
+    const uint32_t *w = cubz_words[plane];
+    if (marginL) p = tmds_encode_border(marginL, plane, p, 0);
+    for (uint32_t c = 0; c < 64; ++c) {
+      const uint8_t b = s[c << 8];
+      *p++ = w[((b >> 6) & 1) | ((b >> 6) & 2)];
+      *p++ = w[((b >> 4) & 1) | ((b >> 4) & 2)];
+      *p++ = w[((b >> 2) & 1) | ((b >> 2) & 2)];
+      *p++ = w[(b & 1) | (b & 2)];
+    }
+    if (marginR) p = tmds_encode_border(marginR, plane, p, 0);
+  }
+  queue_add_blocking(&dvi->q_tmds_valid, &tmdsbuf);
+}

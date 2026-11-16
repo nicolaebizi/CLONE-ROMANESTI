@@ -114,6 +114,17 @@ void __not_in_flash_func(ZxDviRenderLoop)(
         );
         y++;
       }
+      else if (zxSpectrum.cubz()) {
+        // ICE Felix CUB-Z: 512x256 1bpp VRAM in _RAM[4], row remap +
+        // SCROLL latch, bright green phosphor on the DVI/HDMI path.
+        zx_prepare_hdmi_scanline_cubz(
+          &dvi0,
+          y,
+          zxSpectrum.cubzVram(),
+          zxSpectrum.cubzScroll()
+        );
+        y++;
+      }
       else {
         zx_prepare_hdmi_scanline(
           &dvi0, 

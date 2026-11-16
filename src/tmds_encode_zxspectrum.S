@@ -221,6 +221,8 @@ tmds_encode_border:
 
 .section .scratch_x.palettised_2bpp_tables, "a"
 .align 2
+.global palettised_2bpp_tables
+.type palettised_2bpp_tables,%object
 palettised_2bpp_tables:
   // background, foreground = 00, 00
   .word 0x7f103, 0x7f103 // 0000
@@ -304,6 +306,8 @@ palettised_2bpp_tables:
   .word 0xbf203, 0xbf203 // 1111
 
 .align 1
+.global attr_to_colour_chan_B
+.type attr_to_colour_chan_B,%object
 attr_to_colour_chan_B:
 	.byte 0x00 // B 00000000 -> 00000000
 	.byte 0x02 // B 00000001 -> 00000010
@@ -562,6 +566,8 @@ attr_to_colour_chan_B:
 	.byte 0x03 // B 11111110 -> 00000011
 	.byte 0x0f // B 11111111 -> 00001111
 .align 1
+.global attr_to_colour_chan_G
+.type attr_to_colour_chan_G,%object
 attr_to_colour_chan_G:
 	.byte 0x00 // G 00000000 -> 00000000
 	.byte 0x00 // G 00000001 -> 00000000
@@ -820,6 +826,8 @@ attr_to_colour_chan_G:
 	.byte 0x0f // G 11111110 -> 00001111
 	.byte 0x0f // G 11111111 -> 00001111
 .align 1
+.global attr_to_colour_chan_R
+.type attr_to_colour_chan_R,%object
 attr_to_colour_chan_R:
 	.byte 0x00 // R 00000000 -> 00000000
 	.byte 0x00 // R 00000001 -> 00000000
