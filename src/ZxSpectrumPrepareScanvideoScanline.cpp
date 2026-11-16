@@ -3,6 +3,7 @@
 #include "ZxSpectrumPrepareScanvideoScanline.h"
 #include "pico/scanvideo/composable_scanline.h"
 #include "ZxSpectrumDisplay.h"
+#include <string.h>
 
 #define VGA_RGB_555(r,g,b) ((r##UL<<0)|(g##UL<<6)|(b##UL << 11))
 #define VGA_BGYR_1111(r,g,b,y) ((y##UL<<2)|(r##UL<<3)|(g##UL<<1)|b##UL)

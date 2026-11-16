@@ -187,6 +187,8 @@ ZxSpectrumMenu::ZxSpectrumMenu(
     _pathQuickSaves(&_pathSnaps, "quicksaves"),
     // Custom 48K ROM images folder (main menu option R)
     _pathRoms(&_pathZxSpectrum, "roms"),
+    // ZX48 SuperSpec CF image folder (phase 2): zxspectrum/cf
+    _pathCf(&_pathZxSpectrum, "cf"),
     _pathDisks(&_pathZxSpectrum, "disks"),
     _pathCobraDisks(&_pathDisks, "cobra1"),
     _pathDisksHc2000(&_pathDisks, "hc2000"),
@@ -207,6 +209,10 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _kA('A'), _kB('B'),
   // Main menu option R: custom 48K ROM (no other quick key uses 'R')
   _kR('R'),
+#if PICO_RP2350
+  // Reset menu (row 11): ZX48 SuperSpec quick key
+  _kE('E'),
+#endif
 
   _wiz(_wizLeftMargin, 6, _wizCols, _explorerRows * _explorerRowsPerFile),
   _wizUtils(&_wiz, _explorerRowsPerFile, &_k1, &_k2),
@@ -298,8 +304,9 @@ ZxSpectrumMenu::ZxSpectrumMenu(
 #if PICO_RP2350
     // One extra row for the RP2350-only TIM S Plus reset entry, plus the
     // +3s entry (the list scrolls anyway; HC88 is present on every platform)
-    // 48K/128K/Turbo/HC2000/CoBra/+3/TIM/CUB-Z/HC88/+3s
-    10 * SZ_MENU_SEP,
+    // and the ZX48 SuperSpec entry (machine #11, RP2350 only):
+    // 48K/128K/Turbo/HC2000/CoBra/+3/TIM/CUB-Z/HC88/+3s/SuperSpec
+    11 * SZ_MENU_SEP,
 #else
     // 48K/128K/Turbo/HC2000/CoBra/+3/CUB-Z/HC88/+3s
     9 * SZ_MENU_SEP,
@@ -315,6 +322,9 @@ ZxSpectrumMenu::ZxSpectrumMenu(
 #endif
   _resetHc88Op("Reset HC88"),
   _resetCubzOp("Reset CUB-Z"),
+#if PICO_RP2350
+  _resetSuperSpecOp("Reset ZX48 SuperSpec"),
+#endif
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   _resetPlus3Op("Reset ZX Spectrum +3"),
   _resetPlus3sOp("Reset ZX Spectrum +3s"),
@@ -499,6 +509,7 @@ ZxSpectrumMenu::ZxSpectrumMenu(
       case ZxSpectrumPlus3s: m = "ZX Spectrum +3s" ; break;
 #if PICO_RP2350
       case ZxSpectrumTimsPlus: m = "TIM S Plus" ; break;
+      case ZxSpectrumSuperSpec: m = "ZX48 SuperSpec" ; break;
 #endif
       case ZxSpectrumHc88: m = "HC88" ; break;
       case ZxSpectrumCubz: m = "CUB-Z" ; break;
@@ -731,12 +742,25 @@ ZxSpectrumMenu::ZxSpectrumMenu(
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   _reset.addOption(_resetPlus3sOp.addQuickKey(&_k0));
 #endif
+#if PICO_RP2350
+  // ZX48 SuperSpec (machine #11, RP2350 only): after the +3s entry, quick
+  // key 'E' (0-9 and the letters used by the other menus are taken).
+  _reset.addOption(_resetSuperSpecOp.addQuickKey(&_kE));
+#endif
   _resetCubzOp.toggle([=]() {
     _snapName.clear();
     _zxSpectrum->reset(ZxSpectrumCubz);
     _wiz.pop(true);
   });
   _reset.enableQuickKeys();
+
+#if PICO_RP2350
+  _resetSuperSpecOp.toggle([=]() {
+    _snapName.clear();
+    _zxSpectrum->reset(ZxSpectrumSuperSpec);
+    _wiz.pop(true);
+  });
+#endif
 
   _resetTurboOp.toggle([=]() {
     _snapName.clear();
@@ -1605,7 +1629,36 @@ _audioOutOptions.addOption(_audioHdmiOp.addQuickKey(getQuickKey(audioOutQuickKey
         }
 #endif
       }
-     else {
+      // fix5: live SuperSpec CF diag on row 1, same slot as the +3s line
+      // above: the registers latched by the last CF command, the current
+      // STATUS, and the sector counters. While the CF image file is missing
+      // the row shows the one-time blank-image creation progress instead -
+      // on a slow SPI SD card that 16 MB write is the multi-second (up to
+      // multi-minute) stall that used to look like a dead machine. The line
+      // repaints every menu frame, so with the DOS stuck the user opens the
+      // menu and reads where the CF state machine is: ST=58 with a frozen
+      // LBA/W counter = mid-transfer stall; the same values unchanged across
+      // frames = the DOS is polling our STATUS register.
+      else if (_zxSpectrum->type() == ZxSpectrumSuperSpec) {
+        ZxSpectrumCf::CfDiag d;
+        if (_zxSpectrum->cfDiag(&d)) {
+          if (d.imgMaking) {
+            pen->printAtF(0, 1, false, "CF: blank image %lu/%lu KB",
+              (unsigned long)(d.imgDone >> 10),
+              (unsigned long)(ZxSpectrumCf::BLANK_IMAGE_BYTES >> 10));
+          }
+          else {
+            pen->printAtF(0, 1, false, "CF: LBA%06lX C%02X ST%02X CMD%02X W%lu R%lu E%lu FT%lu",
+              (unsigned long)d.lba, (unsigned)d.count, (unsigned)d.status,
+              (unsigned)d.cmd, (unsigned long)d.nWr, (unsigned long)d.nRd,
+              (unsigned long)d.nErr, (unsigned long)d.nUwt);
+          }
+        }
+        else {
+          pen->printAt(0, 1, false, "CF: not attached");
+        }
+      }
+      else {
 #ifdef ZX_VIDEO_AUTO_DETECT
        // One-line report of the boot-time VGA/HDMI auto-detect decision.
        // The raw pin read is no longer printed (rule hardware-validated);
@@ -1770,6 +1823,9 @@ void ZxSpectrumMenu::initialise() {
   // Custom 48K ROM images folder (main menu option R): auto-created like
   // the disks/HC88 folders below.
   _pathRoms.createFolders(_sdCard);
+  // ZX48 SuperSpec CF images folder (phase 2): auto-created like the disks/
+  // folders, same pattern as the HC88 disks dir.
+  _pathCf.createFolders(_sdCard);
   _pathDisks.createFolders(_sdCard);
   _pathDisksHc2000.createFolders(_sdCard);
   _pathDisksBasic.createFolders(_sdCard);

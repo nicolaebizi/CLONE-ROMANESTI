@@ -7,7 +7,7 @@
 #include "ZxSpectrumPrepareScanvideoScanline.h"
 #include "PicoCharRendererScanvideo.h"
 #include "hardware/clocks.h"
-
+#include <stdio.h>
 
 zx_spectrum_audio_driver_enum_t ZxScanlineVgaRenderLoopAudioDefault() {
 #if defined(PICO_DEFAULT_AUDIO)

@@ -11,6 +11,9 @@
 // TIM-S Plus boot-only (RP2350 only): 2 KiB boot EPROM mirrored x8 into the
 // 16K low bank.
 #include "tims_boot_rom.h"
+// ZX48 SuperSpec (machine #11, RP2350 only): 64K EPROM = 4 x 16K banks
+// (224 DOS+menu, 225/226 extended BASIC, 227 original ROM + patches).
+#include "supr_rom.h"
 #endif
 // HC88 phase 1: the 16K motherboard ROM dump.
 #include "hc88_rom.h"
@@ -245,6 +248,21 @@ void ZxSpectrum::transmute(ZxSpectrumType type) {
       _hc88Latch = 0;
       _hc88If1Paged = false;
       break;
+#if PICO_RP2350
+    case ZxSpectrumSuperSpec:
+      // ZX48 SuperSpec power-on state (STUDIU_EMULARE_ROELOF.md §2/§4): the
+      // GAL latches come up cleared by /RESET -> EPROM bank 224 (DOS +
+      // coldstart menu) active at $0000-$3FFF, RAMSEL = normal 48K RAM,
+      // MEMLOCK released, epromwe flip-flop disarmed. The reset path calls
+      // applySuperSpecMap() after the pool zeroing.
+      setPageaddr(0, (uint8_t*)supr_rom); // bank 224 for the interim map
+      _portMem = 0x20; // no $7FFD on this machine: keeps screenPtr() on _RAM[5]
+      _ssEpBank = 0;
+      _ssRamsel = false;
+      _ssMemlock = false;
+      _ssWeArmed = false;
+      break;
+#endif
     case ZxSpectrum128k:
     case ZxSpectrumPlus3:
     case ZxSpectrumPlus3s:
@@ -402,6 +420,26 @@ void ZxSpectrum::applyHc88Map() {
   }
 }
 
+// ZX48 SuperSpec memory map (GAL SUPERSPEC.PLD + STUDIU_EMULARE_ROELOF.md
+// §2/§3, called on every latch change and after reset):
+//   $0000-$3FFF: EPROM bank window - 4 x 16K banks of supr_rom (27C512:
+//   epA16 unwired, so the 3-bit latch is masked to & 3 -> banks 224-227;
+//   IN 228..231 alias). Bank 224 = DOS + coldstart menu (power-on state).
+//   $4000-$7FFF: fixed RAM (screen bank 5).
+//   $8000-$FFFF: 32K RAM swapped by the RAMSEL latch: 0 = the normal 48K
+//   banks 2 + 0, 1 = the extra 32K bank (ssExtra() = the TIM-S pool's banks
+//   8-9, out of BSS; DOS sys-vars at $C022 = _timsRAM[9][0x22]).
+// The raster always shows the standard screen at $4000 (screenPtr default
+// path returns _RAM[5]; _portMem stays 0x20 - no $7FFD on this machine).
+#if PICO_RP2350
+void ZxSpectrum::applySuperSpecMap() {
+  setPageaddr(0, (uint8_t*)(supr_rom + (_ssEpBank & 3) * 0x4000));
+  setPageaddr(1, (uint8_t*)&_RAM[5]);
+  setPageaddr(2, _ssRamsel ? ssExtra() : (uint8_t*)&_RAM[2]);
+  setPageaddr(3, _ssRamsel ? ssExtra() + 0x4000 : (uint8_t*)&_RAM[0]);
+}
+#endif
+
 void ZxSpectrum::reset(ZxSpectrumType type)
 {
   _type = type;
@@ -451,9 +489,12 @@ void ZxSpectrum::reset(ZxSpectrumType type)
     memset(_timsVram, 0, sizeof(_timsVram));
   }
   // +3s (phase 2a): zero the shadow-RAM banks (NEWEPR loader target), stored
-  // in the TIM-S pool's spare banks 8-11 (machine-exclusive pools -
-  // the TIM machine zeroes the whole pool on its own reset, so no state
-  // bleeds across machine switches either way).
+  // in the TIM-S pool's banks 8-11 (machine-exclusive pools - the TIM machine
+  // zeroes the whole pool on its own reset, so no state bleeds across machine
+  // switches either way). Banks 8-9 additionally host SuperSpec's extra 32K
+  // RAM (ssExtra(), BSS fix): again machine-exclusive, each machine zeroes
+  // its own range on reset and the +3s re-copies the shadow pages from
+  // NEWEPR.GEN on its own boot.
   if (type == ZxSpectrumPlus3s) {
     memset(&_timsRAM[8], 0, 4 * (1 << 14));
   }
@@ -465,6 +506,20 @@ void ZxSpectrum::reset(ZxSpectrumType type)
   if (type == ZxSpectrumHc88) {
     memset(_hc88Vram, 0, sizeof(_hc88Vram));
   }
+#if PICO_RP2350
+  // ZX48 SuperSpec: zero the extra 32K RAM bank (the 4164 pair Koenig added,
+  // stored in the TIM-S pool's banks 8-9 - shared with the +3s shadow slots
+  // 0-1, see ssExtra()) so the DOS bank executes against a deterministic
+  // state. Machine-exclusive pools: the +3s re-copies its shadow pages from
+  // NEWEPR.GEN on its own boot, and TIM zeroes the whole pool on its reset,
+  // so this zeroing cannot corrupt another machine's live state.
+  if (type == ZxSpectrumSuperSpec) {
+    memset(&_timsRAM[8], 0, 2 * (1 << 14));
+    // Phase 2: CF register state cleared; the image file handle is released
+    // so a SUPERSPEC.CF copied to the SD after boot is picked up here.
+    if (_ssCf) _ssCf->reset();
+  }
+#endif
   // HC2000: the Interface I shadow page gets the patched v2 ROM
   if (type == ZxSpectrumHc2000) loadIf1V2((uint8_t*)&_RAM[7]);
   // Turbo Spectrum: F5 config and its effective mapping reset to EEPROM mode
@@ -476,6 +531,7 @@ void ZxSpectrum::reset(ZxSpectrumType type)
   else if (type == ZxSpectrumPlus3s) applyPlus3sMap(); // Plus3s mode (own ROMs)
 #if PICO_RP2350
   else if (type == ZxSpectrumTimsPlus) applyTimsMap(); // boot map after RST
+  else if (type == ZxSpectrumSuperSpec) applySuperSpecMap(); // bank 224 + normal RAM after RST
 #endif
   else if (type == ZxSpectrumHc88) applyHc88Map(); // reset map: ROM at Q0, VRAM at Q1 (latch 0)
   _port254 = 0x20;  //0x30;

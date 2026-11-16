@@ -6,6 +6,7 @@
 #include "Z80.h"
 #include "hc2000_rom.h"
 #include "ZxSpectrumHcFdc.h"
+#include "ZxSpectrumCf.h"
 #include "ZxSpectrumKeyboard.h"
 #include "ZxSpectrumJoystick.h"
 #include "InputStream.h"
@@ -50,7 +51,13 @@ enum ZxSpectrumType {
   // 16K VRAM is extra). No FDC and no hires mode this phase.
   ZxSpectrumHc88,
   // ICE Felix CUB-Z (8th computer): CP/M machine, 64K RAM + 16K video RAM
-  ZxSpectrumCubz
+  ZxSpectrumCubz,
+  // ZX48 SuperSpec (11th computer; R. Koenig's modified ZX Spectrum, the
+  // user's physical build; RP2350 only). Phase 1: 64K EPROM (4 x 16K banks
+  // 224-227) paged at $0000-$3FFF by the GAL latches (IN 224..231 / IN 243),
+  // MEMLOCK paging lock, RAMSEL-swapped 32K RAM bank at $8000-$FFFF
+  // (IN 118/119). Keyboard = standard ULA port 0xFE.
+  ZxSpectrumSuperSpec
 };
 
 // CoBra 1 mainboard v.0.2 jumper configurations (Jumper settings table).
@@ -229,6 +236,56 @@ private:
   volatile uint32_t _hc88VramWr = 0;   // byte writes landing in _hc88Vram via the HC88 write path
   volatile uint32_t _hc88Q0Wr = 0;     // writes landing in Q0 RAM beneath the ROM overlay
   volatile uint8_t _hc88LatchLast = 0; // last value written to the motherboard latch
+#if PICO_RP2350
+  // ZX48 SuperSpec (R. Koenig's machine; GAL SUPERSPEC.PLD + the decoded
+  // port table in roeloef/STUDIU_EMULARE_ROELOF.md):
+  // _ssEpBank: EPROM bank window at $0000-$3FFF. The GAL latches epA14/15/16
+  //   from A0/A1/A2 of any IN with A7=1, A3=0 (transparent during the read,
+  //   held otherwise, frozen while MEMLOCK). The physical board has a 64K
+  //   EPROM (27C512) with epA16 unwired, so the effective bank = latch & 3
+  //   (banks 224-227 of supr_rom; IN 228..231 alias to 224..227). The latch
+  //   stores the full 3 bits (a & 7) for state fidelity.
+  // _ssRamsel: RAMSEL latch (IN 118 = 0, IN 119 = 1; any IN with A7=0, A3=0
+  //   drives it from A0). Selects which 32K RAM shows at $8000-$FFFF.
+  // _ssMemlock: MEMLOCK latch (set by any IN with A7=1, A4=1, A3=0, e.g.
+  //   IN 243 = bank 227 + lock; "227+16" in the ROM source). Set-only: it
+  //   has no GAL reset term, only /RESET releases it.
+  // _ssWeArmed: the epromwe write-protect flip-flop (D=reset, clocked by
+  //   any RAMSEL pulse). Latch-only this phase: there is no writable flash
+  //   emulation, the EPROM window is always read-only.
+  uint8_t _ssEpBank;
+  bool _ssRamsel;
+  bool _ssMemlock;
+  bool _ssWeArmed;
+  // The extra 32K RAM bank (4164 pair added by Koenig in place of the 48K
+  // machine's upper RAM chips): shown at $8000-$FFFF while RAMSEL = 1. DOS
+  // system variables live here (Ooffset1..4 at $C022-$C025).
+  // Storage: RELOCATED OUT OF BSS into the TIM-S pool's banks 8-9 (BSS fix:
+  // the +32K array collapsed the RP2350 heap margin and killed the scanvideo
+  // runtime buffer allocations -> no VGA). The pool has no truly free banks
+  // (12/12 used: 0-7 TIM system RAM, 8-11 TIM system RAM AND the +3s shadow
+  // pages), so SuperSpec shares banks 8-9 with the +3s shadow slots 0-1 -
+  // the pools are machine-exclusive (only one machine type runs at a time)
+  // and each machine zeroes its own range on reset (SuperSpec: banks 8-9;
+  // +3s: banks 8-11; TIM: the whole pool), so no state bleeds across a
+  // machine switch (same rationale as the +3s/TIM pool sharing).
+  inline uint8_t* ssExtra() { return (uint8_t*)&_timsRAM[8][0]; }
+#endif
+  // ZX48 SuperSpec phase 2: the machine's own CompactFlash in MEMORY MODE,
+  // backed by a raw image file on the emulator's SD card (ZxSpectrumCf).
+  // Attached by the platform main files via setCf(); a null pointer (or a
+  // missing image file) leaves the CF ports returning the no-media state.
+  ZxSpectrumCf* _ssCf = 0;
+public:
+  void setCf(ZxSpectrumCf* cf) { _ssCf = cf; }
+  // Live CF state for the menu diag line (fix5, phase 2): false when the
+  // SuperSpec CF is not attached on this build.
+  bool cfDiag(ZxSpectrumCf::CfDiag* d) const {
+    if (!_ssCf) return false;
+    _ssCf->diag(d);
+    return true;
+  }
+private:
   bool _ear;
   uint32_t _earInvert;
   uint32_t _earDc;
@@ -367,6 +424,19 @@ private:
       return;
     }
 #if PICO_RP2350
+    // ZX48 SuperSpec writes: $0000-$3FFF is the EPROM bank window with no
+    // RAM beneath it - writes are dropped (the GAL epromwe flip-flop holds
+    // the EPROM write-protected after the first RAMSEL pulse; latch-only
+    // this phase, the window is always read-only). $4000-$7FFF is the fixed
+    // RAM and $8000-$FFFF the RAMSEL-selected 32K bank, both plain RAM
+    // through the page table applied by applySuperSpecMap().
+    if (_type == ZxSpectrumSuperSpec) {
+      if (address < 0x4000) return;
+      *(memaddr(address)) = value;
+      return;
+    }
+#endif
+#if PICO_RP2350
     // TIM-S Plus writes. Translation of fuse memory_pages.c writebyte_internal
     // (VM order: the tims_plus_video_write VRAM hook runs first, then the
     // write-map store) together with tims_plus_memory_map writable gating:
@@ -431,8 +501,10 @@ private:
     // EXIT routine sets it BEFORE the copies, and the copies go through
     // $C000, which stays writable). With no shadow page mapped for the
     // current socket, the standard ROM write-protection below applies. The
-    // shadow pages physically live in the RP2350-only TIM-S pool's spare
-    // banks 8-11 (machine-exclusive pools; see applyPlus3sMap).
+    // shadow pages physically live in the RP2350-only TIM-S pool's banks
+    // 8-11 (machine-exclusive pools; see applyPlus3sMap; banks 8-9 also
+    // host SuperSpec's extra 32K RAM - ssExtra(), per-machine reset zeroing
+    // keeps the states apart).
     if (_type == ZxSpectrumPlus3s && address < 0x4000 && !(_plus3Latch1ffd & 0x01)) {
       const uint8_t wrSlot = (uint8_t)(((_plus3Latch1ffd & 4) ? 2 : 0) | ((_portMem >> 4) & 1));
       if (_plus3sLatch[0] & (1 << wrSlot)) {
@@ -467,6 +539,53 @@ private:
   {
     if (_type == ZxSpectrumCobra) return cobraReadIO(address);
     if (_type == ZxSpectrumCubz) return cubzReadIO(address);
+#if PICO_RP2350
+    // ZX48 SuperSpec: the GAL latches are driven by every IN (the set terms
+    // all require !iorq & !rd; OUT cycles only hold, rd=1 in the hold terms).
+    // The GAL only has A0-A7 as inputs, so the decode is on the LOW byte -
+    // for IN A,(n) both bus halves carry n, for IN r,(C) it is C. Semantics
+    // (SUPERSPEC.PLD + STUDIU_EMULARE_ROELOF.md §4):
+    //  - A7=1, A3=0: EPROM bank latch epA16/15/14 <- A2/A1/A0 (IN 224..231,
+    //    also 0x90/0xF0 families and IN 243), masked to & 3 (27C512, epA16
+    //    unwired). Frozen while MEMLOCK.
+    //  - A7=1, A4=1, A3=0: MEMLOCK set (set-only latch, e.g. IN 243 = bank
+    //    227 + lock, IN 0x90 family). Released only by reset.
+    //  - A7=0, A3=0: RAMSEL <- A0 (IN 118 = bank 0, IN 119 = extra bank;
+    //    every such IN drives it, Kempston 0x1F included - authentic GAL
+    //    behaviour, no joystick awareness on the board). Frozen while
+    //    MEMLOCK; each RAMSEL transition clocks the epromwe flip-flop into
+    //    the write-protected state (latch-only).
+    // Even ports (0x76/0x77, ULA 0xFE) fall through to the standard ULA
+    // keyboard path below; odd unmatched ports return open bus (0xFF) - the
+    // bank-switch result in A is not used by the ROM.
+    if (_type == ZxSpectrumSuperSpec) {
+      const uint8_t a = (uint8_t)address;
+      if (!_ssMemlock) {
+        if ((a & 0x88) == 0x80) {
+          const uint8_t bank = a & 0x07;
+          if (bank != _ssEpBank) { _ssEpBank = bank; applySuperSpecMap(); }
+        }
+        if ((a & 0x88) == 0x00) {
+          const bool r = (a & 0x01) != 0;
+          if (r != _ssRamsel) { _ssRamsel = r; _ssWeArmed = true; applySuperSpecMap(); }
+        }
+        if ((a & 0x98) == 0x90) {
+          _ssMemlock = true;
+        }
+      }
+      // Phase 2: CompactFlash in MEMORY MODE. GAL cfread active term:
+      // !epA15 & !epA14 & !iorq & !rd & !A7 & A3 - the CF is only decoded
+      // while the EPROM bank latch holds the 224 family (bank bits 0-1
+      // clear, epA14=bit0/epA15=bit1 of _ssEpBank); low byte A7=0, A3=1
+      // (0x??7F); the register index comes from A8/A14/A15. Any other
+      // combination is an undecoded port (floating bus 0xFF through the
+      // default below).
+      if ((a & 0x88) == 0x08 && _ssCf && (_ssEpBank & 3) == 0) {
+        return _ssCf->readReg(zxSuperSpecCfRegIndex(address));
+      }
+      // no return: ULA (even ports) and the open-bus default below apply
+    }
+#endif
 #if PICO_RP2350
     // TIM-S Plus motherboard ports (fuse machines_periph.c tims_io_ports,
     // exact 16-bit decode): Even ports stay on the standard ZX ULA keyboard
@@ -702,6 +821,25 @@ inline void writeIO(uint16_t address, uint8_t value)
       cubzWriteIO(address, value);
       return;
     }
+#if PICO_RP2350
+    // ZX48 SuperSpec writes (phase 2): the GAL cfwrite strobe decodes like
+    // cfread (low byte A7=0, A3=1 = 0x??7F, EPROM bank latch in the 224
+    // family) - command 0x20/0x30 at 0xC17F, sector count/LBA registers and
+    // the 512B data stream through 0x007F. Without this hook the DOS's OUTs
+    // fell through into the AY ($C17F & $C002 == $C000 -> writeCtrl!) and
+    // the ULA border handler (0x007F is even). Odd unmatched ports are open
+    // bus (no AY on the SuperSpec board); even ports fall through to the
+    // standard ULA $FE border/speaker handler below.
+    if (_type == ZxSpectrumSuperSpec) {
+      const uint8_t a = (uint8_t)address;
+      if ((a & 0x88) == 0x08) {
+        if (_ssCf && (_ssEpBank & 3) == 0) _ssCf->writeReg(zxSuperSpecCfRegIndex(address), value);
+        return;
+      }
+      if (address & 0x0001) return;
+      // even ports fall through to the ULA border/speaker handler below
+    }
+#endif
 #if PICO_RP2350
     // TIM-S Plus register panel (fuse tims_plus_io_write). Every decoded
     // port write re-applies the memory map. The FDC $3FFD data port and the
@@ -1080,6 +1218,9 @@ inline void writeIO(uint16_t address, uint8_t value)
   void applyTimsMap();
 #endif
   void applyHc88Map();
+#if PICO_RP2350
+  void applySuperSpecMap();
+#endif
   // 48K images run on the TURBO-SPECTRUM clone while that machine is selected
   inline ZxSpectrumType type48(ZxSpectrumType type) {
     return (type == ZxSpectrum48k && _type == ZxSpectrumTurbo) ? ZxSpectrumTurbo : type;

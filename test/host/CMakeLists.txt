@@ -17,8 +17,12 @@ get_filename_component(PICO_PROJECT_FOLDER ${CMAKE_CURRENT_LIST_DIR}/../.. ABSOL
 
 include(CTest)
 
+# Unity/src is absent in this tree; guard so the cf_tests target still
+# configures (the pulse_proc/ay targets then cannot be built).
+if(EXISTS ${PICO_FOLDER}/Unity/src/unity.c)
 add_library(Unity STATIC ${PICO_FOLDER}/Unity/src/unity.c)
 target_include_directories(Unity PUBLIC ${PICO_FOLDER}/Unity/src)
+endif()
 
 file(GLOB PULSE_PROC_SRC ${PICO_PROJECT_FOLDER}/src/PulseProc*.cpp)
 
@@ -29,6 +33,7 @@ set(HOST_TEST_INCLUDES
   ${PICO_FOLDER}/pico-emu-utils/src
 )
 
+if(EXISTS ${PICO_FOLDER}/Unity/src/unity.c)
 foreach(target
   pulse_proc
   ay
@@ -43,3 +48,18 @@ foreach(target
   add_test(NAME ${target}_suite COMMAND ${target}_tests)
   set_tests_properties(${target}_suite PROPERTIES TIMEOUT 10)
 endforeach()
+endif()
+
+# SuperSpec CF write-path desk simulation (test_cf.cpp): needs stub pico.h /
+# ff.h / SdCardFatFsSpi.h headers (cfstub/), NOT the SDK ones, and no Unity
+# (self-contained PASS/FAIL harness; Unity/src is not present in this tree).
+add_executable(cf_tests
+  ${PICO_PROJECT_FOLDER}/src/ZxSpectrumCf.cpp
+  test_cf.cpp
+)
+target_include_directories(cf_tests PRIVATE
+  ${CMAKE_CURRENT_LIST_DIR}/cfstub
+  ${PICO_PROJECT_FOLDER}/src
+)
+add_test(NAME cf_suite COMMAND cf_tests)
+set_tests_properties(cf_suite PROPERTIES TIMEOUT 10)
