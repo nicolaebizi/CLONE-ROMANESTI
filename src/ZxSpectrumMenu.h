@@ -218,6 +218,20 @@ private:
   // ZX48 SuperSpec (machine #11): R. Koning's modified ZX Spectrum,
   // supr190712 ROM, RP2350 only
   PicoOptionText _resetSuperSpecOp;
+  // SuperSpec CF image chooser (phase 3, final layout 17 nov 2026):
+  // D menu -> "CF-SUPERSPECS" submenu -> "S: CF IMAGINE" row (quick key
+  // S). The chooser machinery is the same as the ROM loader, pointed at
+  // zxspectrum/cf; picking a *.CF image mounts it
+  // (ZxSpectrumCf::setImageFile closes the open file + drops the
+  // uniform-write table, so the next CF access opens the fresh dump).
+  PicoOptionText _ssCfImageOp;
+  PicoWizExplorer _chooseSsCfImage;
+  // "CF-SUPERSPECS" submenu of the D disk menu (17 nov 2026): the D menu
+  // entry opens this one-row PicoSelect; inside it the "S: CF IMAGINE"
+  // row (quick key S - free in this context) is the relocated chooser
+  // entry, unchanged behaviour (isCfImage / setImageFile / unmount).
+  PicoSelect _ssCfMenu;
+  PicoOptionText _ssCfMenuOp;
 #endif
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   PicoOptionText _resetPlus3Op;

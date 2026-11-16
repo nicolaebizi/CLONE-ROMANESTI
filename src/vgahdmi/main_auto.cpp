@@ -20,6 +20,7 @@
 
 #include "ZxSpectrumFatSpiKiosk.h"
 #include "ZxSpectrum.h"
+#include "ZxSpectrumCf.h"
 #include "ZxSpectrumHidKeyboard.h"
 #include "ZxSpectrumDualJoystick.h"
 #include "ZxSpectrumHidJoystick.h"
@@ -56,6 +57,13 @@
 #define LED_PIN 25
 
 static SdCardFatFsSpi sdCard0(0);
+
+// ZX48 SuperSpec phase 2 (same as the VGA main): the machine's own
+// CompactFlash in memory mode, backed by zxspectrum/cf/SUPERSPEC.CF on
+// this SD card. Attached to the machine below; the CF ports only decode
+// while the DOS bank 224 is latched (ZxSpectrum readIO/writeIO SuperSpec
+// branches).
+static ZxSpectrumCf superSpecCf(&sdCard0);
 
 // ZX Spectrum emulator
 static ZxSpectrumFatSpiKiosk zxSpectrumKisok(
@@ -340,6 +348,10 @@ int main(){
 
   keyboard1.setZxSpectrum(&zxSpectrum);
 //  keyboard2.setZxSpectrum(&zxSpectrum);
+
+  // Attach the SuperSpec CF emulation (image opened lazily at the machine's
+  // first CF port access; missing file = no-media "sector error", natural).
+  zxSpectrum.setCf(&superSpecCf);
 
   // Initialise the menu renderer
   pcw_init_renderer();

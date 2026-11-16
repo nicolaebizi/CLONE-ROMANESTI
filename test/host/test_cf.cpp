@@ -20,6 +20,10 @@
 // real f_write, the table survives a machine reset, and a card that cannot
 // actually provide the space (disk-full stub clips the growth) falls back
 // to the 16 MB fill with the diag E counter latched.
+// Filename switch (superspec13, phase 3): setImageFile() with a NEW name
+// closes the open file + drops the uniform-write table (fresh mount); the
+// next CF access opens the new path with an empty table. The same name is
+// a no-op.
 //
 // Build (from the project root):
 //   cmake -S test/host -B <build>/host-tests
@@ -61,6 +65,12 @@ static FSIZE_t growLimit = 0;
 // metadata seek and never run the 0xFF fill loop.
 static int bigSeek = 0, realWrites = 0;
 
+// Filename-switch instrumentation (superspec13): which path f_open last
+// succeeded with, and how many f_close calls ran (the chooser's fresh
+// mount must close the open file of the previous image).
+static char openPath[128] = "";
+static int openCount = 0, closeCount = 0;
+
 static void resetFs() {
   memset(img, 0xFF, sizeof(img));
   imgSize = IMG_BYTES;
@@ -71,10 +81,15 @@ static void resetFs() {
   failWrite = failSync = failSeek = 0;
   growLimit = 0;
   bigSeek = realWrites = 0;
+  openPath[0] = 0;
+  openCount = closeCount = 0;
 }
 
 FRESULT f_open(FIL* fp, const char* path, unsigned mode) {
-  if (strcmp(path, ZxSpectrumCf::IMAGE_PATH) != 0) return FR_NO_FILE;
+  // Single-backing-store model: any path is "the" image file (the firmware
+  // switches between zxspectrum/cf dumps through setImageFile). The create
+  // branch emulates FatFs: a fresh file is empty, writes/seek past EOF
+  // extend it.
   if (mode & (FA_CREATE_NEW | FA_CREATE_ALWAYS)) {
     if ((mode & FA_CREATE_NEW) && imgExists) return FR_EXIST;
     memset(img, 0xFF, sizeof(img));
@@ -83,16 +98,22 @@ FRESULT f_open(FIL* fp, const char* path, unsigned mode) {
     imgOpenRw = true;
     imgPos = 0;
     fp->objsize = imgSize;
+    strncpy(openPath, path, sizeof(openPath) - 1);
+    openPath[sizeof(openPath) - 1] = 0;
+    ++openCount;
     return FR_OK;
   }
   if (!imgExists) return FR_NO_FILE;
   imgOpenRw = (mode & FA_WRITE) != 0;
   imgPos = 0;
   fp->objsize = imgSize;
+  strncpy(openPath, path, sizeof(openPath) - 1);
+  openPath[sizeof(openPath) - 1] = 0;
+  ++openCount;
   return FR_OK;
 }
 
-FRESULT f_close(FIL*) { imgOpenRw = false; return FR_OK; }
+FRESULT f_close(FIL*) { imgOpenRw = false; ++closeCount; return FR_OK; }
 FRESULT f_sync(FIL*) {
   if (failSync > 0) { --failSync; return FR_DISK_ERR; }
   return FR_OK;
@@ -148,7 +169,7 @@ FRESULT f_write(FIL* fp, const void* buff, UINT btw, UINT* bw) {
   return FR_OK;
 }
 FRESULT f_unlink(const char* path) {
-  if (strcmp(path, ZxSpectrumCf::IMAGE_PATH) == 0) {
+  if (strcmp(path, ZxSpectrumCf::imagePath()) == 0) {
     imgExists = false;
     imgSize = IMG_BYTES;
   }
@@ -566,6 +587,53 @@ int main() {
     wrData(cf, 1024, 1, 0x5A);
     CHECK(cf.readReg(7) == ZxSpectrumCf::CF_ST_IDLE);
     CHECK(img[1024 * 512] == (uint8_t)(0x5A + 0 + 1024));
+  }
+
+  // --- TEST 12: filename switch = fresh mount (close + table drop) --------
+  // Phase 3 regression (the menu's SuperSpec CF chooser): setImageFile()
+  // with a NEW name must close the open image file and drop the
+  // uniform-write table (a different dump must never inherit the previous
+  // image's virtual content); the next CF access opens the NEW path and
+  // sees no recorded runs. The same name is a no-op.
+  {
+    resetFs();
+    sd.fakeMounted = true;
+    imgExists = true;
+    ZxSpectrumCf cf(&sd);
+
+    // Build virtual-format state: one uniform run (FT=1).
+    wrReg(cf, 1025, 1);
+    cf.writeReg(7, ZxSpectrumCf::CMD_WRITE);
+    wrUni(cf, 1025, 1, 0x20);
+    CHECK(cf.readReg(7) == ZxSpectrumCf::CF_ST_IDLE);
+    ZxSpectrumCf::CfDiag d;
+    cf.diag(&d);
+    CHECK(d.nUwt == 1);
+    const int closesBefore = closeCount; // nothing closed yet
+
+    // Same name: deliberate no-op - no close, table untouched.
+    ZxSpectrumCf::setImageFile(ZxSpectrumCf::imagePath());
+    cf.diag(&d);
+    CHECK(d.nUwt == 1);
+    CHECK(closeCount == closesBefore);
+
+    // NEW name: the open file is closed and the table is dropped.
+    ZxSpectrumCf::setImageFile("zxspectrum/cf/DUMP2.CF");
+    CHECK(strcmp(ZxSpectrumCf::imagePath(), "zxspectrum/cf/DUMP2.CF") == 0);
+    cf.diag(&d);
+    CHECK(d.nUwt == 0);                    // UWT dropped (fresh mount)
+    CHECK(closeCount == closesBefore + 1); // the open file was closed
+
+    // The next CF access re-opens the NEW path and reads the fresh image:
+    // the old virtual 0x20 run is gone (real file / erased state instead).
+    wrReg(cf, 1025, 1);
+    cf.writeReg(7, ZxSpectrumCf::CMD_READ);
+    CHECK(cf.readReg(7) == ZxSpectrumCf::CF_ST_DRQ);
+    CHECK(strcmp(openPath, "zxspectrum/cf/DUMP2.CF") == 0);
+    CHECK(rdData(cf, 1, 0xFF));
+    CHECK(cf.readReg(7) == ZxSpectrumCf::CF_ST_IDLE);
+    cf.diag(&d);
+    CHECK(d.nUwt == 0); // still no table entries for the new image
   }
 
   printf("cf_tests: %d checks, %d failures\n", checks, failures);

@@ -13,6 +13,10 @@
 // unchanged with barely-measurable SPI-SD throughput impact.
 #define CF_BUF_SECTS 8
 
+// CF image path buffer (static BSS, no heap): folder + LFN file name. The
+// menu's SuperSpec CF chooser may mount any *.CF dump from zxspectrum/cf.
+#define CF_IMAGE_PATH_MAX 128
+
 // Uniform-write table capacity: one entry per recorded uniform sector run.
 // Koning's DIR blocks are CONTIGUOUS LBA ranges (DIR #n ends exactly where
 // #n+1 starts), so the FORMAT!'s uniform clears coalesce into ONE giant run
@@ -98,7 +102,14 @@ public:
   // disks/ folders. Created as a folder by ZxSpectrumMenu::initialise(); the
   // image file itself is auto-created blank (BLANK_IMAGE_BYTES of 0xFF) when
   // missing, and can be replaced by a raw dd dump of the real CF card.
-  static const char* IMAGE_PATH;
+  // PHASE 3 - the file NAME is runtime-configurable: the menu's SuperSpec CF
+  // chooser mounts any *.CF dump from zxspectrum/cf. setImageFile() with a
+  // NEW name unmounts the current image (open file closed + uniform-write
+  // table dropped) so the next CF access lazily opens the fresh dump; the
+  // same name is a deliberate no-op (no unmount of a running DOS session).
+  // Default: "zxspectrum/cf/SUPERSPEC.CF".
+  static const char* imagePath();
+  static void setImageFile(const char* path);
 
   // Size of the auto-created image: 3,670,000,000 bytes = 7,167,968.75
   // sectors - the whole Koning FS structure (~3.5 GB: ROOT + 1000 DIR
@@ -174,6 +185,12 @@ private:
   bool createBlankImage();
   bool createSmallImage();
   void noteImageSize();
+  // Fresh mount (phase 3, called by setImageFile on a name change): close
+  // the open image file and drop the uniform-write table - the table is
+  // image content, and a different image file must never inherit the
+  // previous image's virtual content. reset() style state cleanup comes
+  // with it (regs/DRQ/diag counters, core1 progress flags).
+  void unmount();
   void issue(uint8_t cmd);
   bool loadChunk();
   bool writeChunk();
@@ -198,6 +215,11 @@ private:
   void regWrite(uint8_t idx, uint8_t value);
 
   SdCardFatFsSpi* _sdCard;
+  // Runtime-configurable image path (see imagePath/setImageFile above) and
+  // the single live instance the static setter unmounts on a name change
+  // (there is exactly one ZxSpectrumCf: the SuperSpec machine's CF).
+  static char _imagePath[CF_IMAGE_PATH_MAX];
+  static ZxSpectrumCf* _instance;
   FIL _fil;
   bool _open;
   bool _writable;

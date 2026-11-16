@@ -87,6 +87,19 @@ static bool isCustom48kRom(uint32_t size, const char *filename) {
   return *ext == 0 && size == 16384;
 }
 
+// SuperSpec CF chooser (phase 3): any *.CF raw image is accepted
+// (extension match is case-insensitive; any size - dumps of real CF cards
+// and smaller test images both mount).
+static bool isCfImage(const char *filename) {
+  const char *ext = fext(filename);
+  const char *r = "cf";
+  while (*r) {
+    if ((*ext | 0x20) != *r) return false; // case-insensitive compare
+    ++r; ++ext;
+  }
+  return *ext == 0;
+}
+
 PicoQuickKeyAscii *ZxSpectrumMenu::getQuickKey(uint i) {
   switch(i) {
     case 0: return &_k1;
@@ -154,6 +167,9 @@ void ZxSpectrumMenu::setWizLayout(int32_t margin, int32_t cols1, int32_t cols2, 
     _chooseHc88DiskA.move(0, 0, _wizCols, _chooseHc88DiskA.wh());
     _chooseHc88DiskB.move(0, 0, _wizCols, _chooseHc88DiskB.wh());
     _chooseZx48kRom.move(0, 0, _wizCols, _chooseZx48kRom.wh());
+#if PICO_RP2350
+    _ssCfMenu.move(0, 0, _wizCols, _ssCfMenu.wh());
+#endif
     _reset.move(0, 0, _wizCols, _reset.wh());
    _cobra.move(0, 0, _wizCols, _cobra.wh());
    _chooseCobraDisk.move(0, 0, _wizCols, _chooseCobraDisk.wh());
@@ -324,6 +340,14 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _resetCubzOp("Reset CUB-Z"),
 #if PICO_RP2350
   _resetSuperSpecOp("Reset ZX48 SuperSpec"),
+  // SuperSpec CF image chooser (phase 3): same chooser machinery as the
+  // ROM loader (_chooseZx48kRom), pointed at the zxspectrum/cf folder.
+  _ssCfImageOp("CF IMAGINE"),
+  _chooseSsCfImage(&_wizUtils, sdCard, &_pathCf, 0, 0, _wizCols, _explorerRows, _explorerRowsPerFile),
+  // "CF-SUPERSPECS" submenu (D menu, 17 nov 2026): one row, the relocated
+  // CF chooser entry (quick key S).
+  _ssCfMenu(0, 0, _wizCols, 1, _menuRowsPerItem),
+  _ssCfMenuOp("CF-SUPERSPECS"),
 #endif
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   _resetPlus3Op("Reset ZX Spectrum +3"),
@@ -760,6 +784,11 @@ ZxSpectrumMenu::ZxSpectrumMenu(
     _zxSpectrum->reset(ZxSpectrumSuperSpec);
     _wiz.pop(true);
   });
+
+  // NOTE (user feedback, 16 nov 2026): the reset submenu = ONLY for
+  // resetting. The CF chooser row moved out of here into the D disk
+  // menu, as the "CF-SUPERSPECS" submenu (D -> CF-SUPERSPECS ->
+  // S: CF IMAGINE, final layout 17 nov 2026).
 #endif
 
   _resetTurboOp.toggle([=]() {
@@ -1194,6 +1223,61 @@ ZxSpectrumMenu::ZxSpectrumMenu(
 
   _chooseHc88DiskA.onRefreshDisplay = [=]() { _hcDisk.repaint(); };
   _chooseHc88DiskB.onRefreshDisplay = [=]() { _hcDisk.repaint(); };
+
+#if PICO_RP2350
+  // ZX48 SuperSpec CF image chooser (phase 3, final menu layout 16 nov
+  // 2026): the D disk menu (the menu opened by quick key D, which already
+  // holds the HC2K/+3/TIMS PLUS/CUBZ/HC88 machine-disk entries) no longer
+  // holds the CF row directly - it opens the "CF-SUPERSPECS" submenu
+  // instead (D -> CF-SUPERSPECS). Inside the submenu the "S: CF IMAGINE"
+  // row (quick key S - free in this one-row context, the D menu's own
+  // 1-9/A-D keys are all taken) opens the same chooser as before, pointed
+  // at zxspectrum/cf. The row label shows the basename of the currently
+  // mounted CF image; picking a *.CF image mounts it
+  // (ZxSpectrumCf::setImageFile closes the open file + drops the
+  // uniform-write table, so the next CF access opens the fresh dump).
+  _hcDisk.addOption(&_ssCfMenuOp);
+  _ssCfMenuOp.toggle([=]() {
+    _wiz.push(
+      &_ssCfMenu,
+      [=](PicoPen *pen){ pen->printAtF(0, 0, false, "%s", "CF-SUPERSPECS"); },
+      true);
+  });
+
+  _ssCfMenu.addOption(_ssCfImageOp.addQuickKey(&_kS));
+  _ssCfImageOp.onPaint([=](PicoPen *pen){
+    pen->clear();
+    // Basename of the current image path (single source of truth:
+    // ZxSpectrumCf::imagePath(), updated by the chooser below).
+    const char* p = ZxSpectrumCf::imagePath();
+    const char* base = strrchr(p, '/');
+    if (!base) base = p; else ++base;
+    pen->printAtF(0, 0, false, "%-*s[ %-*s]", _wizCol1Width, "CF IMAGINE",
+      _wizCol2Width, base);
+  });
+  _ssCfImageOp.toggle([=]() {
+    _chooseSsCfImage.reload();
+    _wiz.push(
+      &_chooseSsCfImage,
+      [=](PicoPen *pen){ pen->printAtF(0, 0, false, "%s", "SuperSpec CF images"); },
+      true);
+  });
+  _chooseSsCfImage.onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+    // Any *.CF file (case-insensitive, any size) mounts as the SuperSpec CF
+    // image: the choice sets the file name AND unmounts the current image
+    // (ZxSpectrumCf::setImageFile closes the open file + drops the
+    // uniform-write table), so the next CF access lazily opens the fresh
+    // dump. A non-.CF click just returns to the menu unchanged.
+    if (!(finfo->fattrib & AM_DIR) && isCfImage(finfo->fname)) {
+      ZxSpectrumCf::setImageFile(path);
+      _main.repaint();
+    }
+    _wiz.pop(true);
+  };
+  _chooseSsCfImage.onRefreshDisplay = [=]() { _main.repaint(); };
+  _ssCfMenu.enableQuickKeys();
+#endif
+
   _hcDisk.enableQuickKeys();
 
   _hcDiskAOp.toggle([=]() {
@@ -1513,6 +1597,19 @@ _audioOutOptions.addOption(_audioHdmiOp.addQuickKey(getQuickKey(audioOutQuickKey
 #else
      pen->printAt(0, 0, false, "ZX Spectrum 48K/128K by fruit-bat");
 #endif
+     // Shared row-1 machine report, used by the generic branch below and
+     // by the SuperSpec branch whenever it has no CF row to print.
+     auto builtForRow = [=](PicoPen *pen) {
+#ifdef ZX_VIDEO_AUTO_DETECT
+       pen->printAtF(0, 1, false, "Built for %s | Video: %s",
+          PICO_MCU, zxVideoAutoDetectName());
+#else
+       pen->printAtF(0, 1, false, "Built for %s on %s",
+          PICO_MCU,
+          __DATE__
+        );
+#endif
+     };
      // diag8: live +3s hang probe on row 1. Kept OUTSIDE the
      // ZX_VIDEO_AUTO_DETECT gate on purpose: that macro only exists in the
      // VGA_HDMI_AUTO target (src/vgahdmi), while the +3s test machine runs
@@ -1629,50 +1726,42 @@ _audioOutOptions.addOption(_audioHdmiOp.addQuickKey(getQuickKey(audioOutQuickKey
         }
 #endif
       }
-      // fix5: live SuperSpec CF diag on row 1, same slot as the +3s line
-      // above: the registers latched by the last CF command, the current
-      // STATUS, and the sector counters. While the CF image file is missing
-      // the row shows the one-time blank-image creation progress instead -
-      // on a slow SPI SD card that 16 MB write is the multi-second (up to
-      // multi-minute) stall that used to look like a dead machine. The line
-      // repaints every menu frame, so with the DOS stuck the user opens the
-      // menu and reads where the CF state machine is: ST=58 with a frozen
-      // LBA/W counter = mid-transfer stall; the same values unchanged across
-      // frames = the DOS is polling our STATUS register.
+      // fix5: SuperSpec CF row 1, same slot as the +3s line above. User
+      // feedback 16 nov 2026: the "CF: LBA..." DEBUG row is REMOVED from
+      // the menu by default - the painting is gated behind ZX_CF_DIAG
+      // (default OFF; ON only with -DZX_CF_DIAG=ON), and the cfDiag()
+      // machinery itself stays for future debugging. Kept UNCONDITIONAL:
+      // the one-time blank-image creation progress - on a slow SPI SD
+      // card that 16 MB write is the multi-second (up to multi-minute)
+      // stall that used to look like a dead machine, so the user still
+      // gets the progress feedback without any debug output.
       else if (_zxSpectrum->type() == ZxSpectrumSuperSpec) {
         ZxSpectrumCf::CfDiag d;
-        if (_zxSpectrum->cfDiag(&d)) {
-          if (d.imgMaking) {
-            pen->printAtF(0, 1, false, "CF: blank image %lu/%lu KB",
-              (unsigned long)(d.imgDone >> 10),
-              (unsigned long)(ZxSpectrumCf::BLANK_IMAGE_BYTES >> 10));
-          }
-          else {
-            pen->printAtF(0, 1, false, "CF: LBA%06lX C%02X ST%02X CMD%02X W%lu R%lu E%lu FT%lu",
-              (unsigned long)d.lba, (unsigned)d.count, (unsigned)d.status,
-              (unsigned)d.cmd, (unsigned long)d.nWr, (unsigned long)d.nRd,
-              (unsigned long)d.nErr, (unsigned long)d.nUwt);
-          }
+        const bool cfAttached = _zxSpectrum->cfDiag(&d);
+        if (cfAttached && d.imgMaking) {
+          pen->printAtF(0, 1, false, "CF: blank image %lu/%lu KB",
+            (unsigned long)(d.imgDone >> 10),
+            (unsigned long)(ZxSpectrumCf::BLANK_IMAGE_BYTES >> 10));
+        }
+#ifdef ZX_CF_DIAG
+        else if (cfAttached) {
+          pen->printAtF(0, 1, false, "CF: LBA%06lX C%02X ST%02X CMD%02X W%lu R%lu E%lu FT%lu",
+            (unsigned long)d.lba, (unsigned)d.count, (unsigned)d.status,
+            (unsigned)d.cmd, (unsigned long)d.nWr, (unsigned long)d.nRd,
+            (unsigned long)d.nErr, (unsigned long)d.nUwt);
         }
         else {
           pen->printAt(0, 1, false, "CF: not attached");
         }
+#else
+        else {
+          builtForRow(pen);
+        }
+#endif
       }
       else {
-#ifdef ZX_VIDEO_AUTO_DETECT
-       // One-line report of the boot-time VGA/HDMI auto-detect decision.
-       // The raw pin read is no longer printed (rule hardware-validated);
-       // the zxVideoAutoDetectPinsRaw global stays exported in
-       // VideoAutoDetect for future debugging.
-       pen->printAtF(0, 1, false, "Built for %s | Video: %s",
-          PICO_MCU, zxVideoAutoDetectName());
-#else
-       pen->printAtF(0, 1, false, "Built for %s on %s",
-          PICO_MCU,
-          __DATE__
-        );
-#endif
-     }
+        builtForRow(pen);
+      }
 
      // Persistent ROM-load stage (rfix4): printed in the row-1 area, right
      // of the "Built for ..." report, so the last loader step stays

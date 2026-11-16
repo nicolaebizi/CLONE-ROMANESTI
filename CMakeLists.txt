@@ -43,6 +43,15 @@ pico_sdk_init()
 
 add_compile_definitions(PICO_MCU="${PICO_PLATFORM}")
 
+# SuperSpec CF diag row ("CF: LBA...") in the menu: default OFF (user
+# feedback 16 nov 2026 - remove the debug row from the shipped menu).
+# Enable only for debugging: cmake -DZX_CF_DIAG=ON ... ; the cfDiag()
+# machinery itself always stays compiled in for future use.
+option(ZX_CF_DIAG "Show the SuperSpec CF diag line in the menu (debug)" OFF)
+if(ZX_CF_DIAG)
+  add_compile_definitions(ZX_CF_DIAG=1)
+endif()
+
 add_compile_options(-Wall)
 
 add_compile_definitions(HID_PROTOCOL_DEFAULT=HID_PROTOCOL_REPORT)

@@ -3,7 +3,37 @@
 #include "ZxSpectrumCf.h"
 #include <string.h>
 
-const char* ZxSpectrumCf::IMAGE_PATH = "zxspectrum/cf/SUPERSPEC.CF";
+// Runtime-configurable backing file (see ZxSpectrumCf.h): the default dump
+// path, replaceable by the menu's SuperSpec CF chooser (any *.CF dump from
+// zxspectrum/cf).
+char ZxSpectrumCf::_imagePath[CF_IMAGE_PATH_MAX] = "zxspectrum/cf/SUPERSPEC.CF";
+ZxSpectrumCf* ZxSpectrumCf::_instance = 0;
+
+const char* ZxSpectrumCf::imagePath() { return _imagePath; }
+
+// Static image switch (phase 3): a NEW file name unmounts the current image
+// (unmount() below), so the next CF access lazily opens the fresh dump and
+// noteImageSize() re-learns its size identity for the uniform-write table.
+// Same name (or empty): deliberate no-op - no unmount of a running session.
+void ZxSpectrumCf::setImageFile(const char* path) {
+  if (!path || !*path) return;
+  if (strcmp(path, _imagePath) == 0) return;
+  strncpy(_imagePath, path, sizeof(_imagePath) - 1);
+  _imagePath[sizeof(_imagePath) - 1] = 0;
+  if (_instance) _instance->unmount();
+}
+
+// Fresh mount: close the open image file (if any) and drop the uniform-write
+// table - the table is image content, and a different image file must never
+// inherit the previous image's virtual content. _imgBytes is zeroed so the
+// next open re-learns the size (noteImageSize). reset() does the rest of the
+// state cleanup (registers/DRQ/diag counters, core1 progress flags).
+void ZxSpectrumCf::unmount() {
+  reset();
+  memset(_uwt, 0, sizeof(_uwt));
+  _uwtN = 0;
+  _imgBytes = 0;
+}
 
 // Virtual image size: 3,670,000,000 bytes (~3.67 GB). Root cause (hardware
 // confirmed): Koning's FS = ROOT (LBA 1024) + 1000 DIR blocks x 7168 sectors
@@ -46,6 +76,7 @@ ZxSpectrumCf::ZxSpectrumCf(SdCardFatFsSpi* sdCard) :
   _imgMaking(false),
   _imgDone(0)
 {
+  _instance = this; // the static setImageFile() unmounts the live instance
   memset(_uwt, 0, sizeof(_uwt));
   _uwtN = 0;
   _imgBytes = 0;
@@ -107,14 +138,14 @@ bool ZxSpectrumCf::ensureOpen() {
   if (_open) return true;
   if (_sdCard == 0) { fail(); return false; }
   if (!_sdCard->mounted() && !_sdCard->mount()) { fail(); return false; }
-  if (f_open(&_fil, IMAGE_PATH, FA_READ | FA_WRITE | FA_OPEN_EXISTING) == FR_OK) {
+  if (f_open(&_fil, _imagePath, FA_READ | FA_WRITE | FA_OPEN_EXISTING) == FR_OK) {
     _open = true;
     _writable = true;
     noteImageSize();
     if (_status == CF_ST_ERR) _status = CF_ST_IDLE;
     return true;
   }
-  if (f_open(&_fil, IMAGE_PATH, FA_READ | FA_OPEN_EXISTING) == FR_OK) {
+  if (f_open(&_fil, _imagePath, FA_READ | FA_OPEN_EXISTING) == FR_OK) {
     _open = true;
     _writable = false;
     noteImageSize();
@@ -126,7 +157,7 @@ bool ZxSpectrumCf::ensureOpen() {
   // beyond the physical content - no 0xFF fill is ever written) and re-open
   // it. Still no luck (write-protected mount, no folder) -> no-media ERR.
   if (createBlankImage() &&
-      f_open(&_fil, IMAGE_PATH, FA_READ | FA_WRITE | FA_OPEN_EXISTING) == FR_OK) {
+      f_open(&_fil, _imagePath, FA_READ | FA_WRITE | FA_OPEN_EXISTING) == FR_OK) {
     _open = true;
     _writable = true;
     noteImageSize();
@@ -178,7 +209,7 @@ bool ZxSpectrumCf::createBlankImage() {
   _imgDone = 0;
   zxCfImgMaking = 1;
   zxCfImgDone = 0;
-  if (f_open(&fil, IMAGE_PATH, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) {
+  if (f_open(&fil, _imagePath, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) {
     _imgMaking = false;
     zxCfImgMaking = 0;
     return false;
@@ -189,7 +220,7 @@ bool ZxSpectrumCf::createBlankImage() {
     f_size(&fil) == (FSIZE_t)IMAGE_BYTES;
   f_close(&fil);
   if (!grown) {
-    f_unlink(IMAGE_PATH);
+    f_unlink(_imagePath);
     fail(); // diag E latches the failed 3.67 GB growth (FT stays 0)
     const bool ok = createSmallImage();
     _imgMaking = false;
@@ -214,7 +245,7 @@ bool ZxSpectrumCf::createSmallImage() {
   const uint32_t ffLen = sizeof(_buf);
   memset(ffBuf, 0xFF, ffLen);
   FIL fil;
-  if (f_open(&fil, IMAGE_PATH, FA_WRITE | FA_CREATE_NEW) != FR_OK) return false;
+  if (f_open(&fil, _imagePath, FA_WRITE | FA_CREATE_NEW) != FR_OK) return false;
   bool ok = true;
   for (uint32_t i = 0; ok && i < BLANK_IMAGE_BYTES / ffLen; ++i) {
     UINT bw = 0;
@@ -224,7 +255,7 @@ bool ZxSpectrumCf::createSmallImage() {
   }
   if (ok) ok = f_sync(&fil) == FR_OK;
   f_close(&fil);
-  if (!ok) f_unlink(IMAGE_PATH);
+  if (!ok) f_unlink(_imagePath);
   return ok;
 }
 
