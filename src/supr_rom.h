@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 fruit-bat
 //
-// ZX48 SuperSpec (machine #11, RP2350 only; R. Koenig's modified ZX
+// ZX48 SuperSpec (machine #11, RP2350 only; R. Koning's modified ZX
 // Spectrum - the ROM from the user's physical board): 64 KiB EPROM
 // (27C512) = 4 x 16 KiB banks paged at $0000-$3FFF by the GAL epA15/14
 // latches (IN 224..231; epA16 unwired so ports 228-231 alias to 224-227):

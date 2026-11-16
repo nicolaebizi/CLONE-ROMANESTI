@@ -215,7 +215,7 @@ private:
   PicoOptionText _resetHc88Op;
   PicoOptionText _resetCubzOp;
 #if PICO_RP2350
-  // ZX48 SuperSpec (machine #11): R. Koenig's modified ZX Spectrum,
+  // ZX48 SuperSpec (machine #11): R. Koning's modified ZX Spectrum,
   // supr190712 ROM, RP2350 only
   PicoOptionText _resetSuperSpecOp;
 #endif

@@ -52,7 +52,7 @@ enum ZxSpectrumType {
   ZxSpectrumHc88,
   // ICE Felix CUB-Z (8th computer): CP/M machine, 64K RAM + 16K video RAM
   ZxSpectrumCubz,
-  // ZX48 SuperSpec (11th computer; R. Koenig's modified ZX Spectrum, the
+  // ZX48 SuperSpec (11th computer; R. Koning's modified ZX Spectrum, the
   // user's physical build; RP2350 only). Phase 1: 64K EPROM (4 x 16K banks
   // 224-227) paged at $0000-$3FFF by the GAL latches (IN 224..231 / IN 243),
   // MEMLOCK paging lock, RAMSEL-swapped 32K RAM bank at $8000-$FFFF
@@ -237,7 +237,7 @@ private:
   volatile uint32_t _hc88Q0Wr = 0;     // writes landing in Q0 RAM beneath the ROM overlay
   volatile uint8_t _hc88LatchLast = 0; // last value written to the motherboard latch
 #if PICO_RP2350
-  // ZX48 SuperSpec (R. Koenig's machine; GAL SUPERSPEC.PLD + the decoded
+  // ZX48 SuperSpec (R. Koning's machine; GAL SUPERSPEC.PLD + the decoded
   // port table in roeloef/STUDIU_EMULARE_ROELOF.md):
   // _ssEpBank: EPROM bank window at $0000-$3FFF. The GAL latches epA14/15/16
   //   from A0/A1/A2 of any IN with A7=1, A3=0 (transparent during the read,
@@ -257,7 +257,7 @@ private:
   bool _ssRamsel;
   bool _ssMemlock;
   bool _ssWeArmed;
-  // The extra 32K RAM bank (4164 pair added by Koenig in place of the 48K
+  // The extra 32K RAM bank (4164 pair added by Koning in place of the 48K
   // machine's upper RAM chips): shown at $8000-$FFFF while RAMSEL = 1. DOS
   // system variables live here (Ooffset1..4 at $C022-$C025).
   // Storage: RELOCATED OUT OF BSS into the TIM-S pool's banks 8-9 (BSS fix:

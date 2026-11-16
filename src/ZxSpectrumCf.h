@@ -14,7 +14,7 @@
 #define CF_BUF_SECTS 8
 
 // Uniform-write table capacity: one entry per recorded uniform sector run.
-// Koenig's DIR blocks are CONTIGUOUS LBA ranges (DIR #n ends exactly where
+// Koning's DIR blocks are CONTIGUOUS LBA ranges (DIR #n ends exactly where
 // #n+1 starts), so the FORMAT!'s uniform clears coalesce into ONE giant run
 // and a handful of entries suffice; 64 entries also absorb a moderately
 // fragmented pattern of 1-sector uniform writes (a table-full uniform write
@@ -23,7 +23,7 @@
 
 // ZX48 SuperSpec CompactFlash in MEMORY MODE (phase 2).
 //
-// R. Koenig's board wires the CF card 8-bit "memory mode" style: /CE1 tied
+// R. Koning's board wires the CF card 8-bit "memory mode" style: /CE1 tied
 // low, /OE <- GAL cfread, /WE <- GAL cfwrite, and the CF register address
 // lines A0/A1/A2 driven from Z80 A8/A14/A15 - the register index comes from
 // the HIGH byte of the port address (port table, roeloef/
@@ -39,7 +39,7 @@
 // card, opened lazily at the first CF access (a missing file is auto-created
 // blank and grown to 3,670,000,000 bytes with METADATA-ONLY FatFs calls -
 // f_lseek past EOF stretches the cluster chain, no data writes, no
-// contiguity needed - Koenig's FS is ROOT at LBA 1024 + 1000 DIR blocks of
+// contiguity needed - Koning's FS is ROOT at LBA 1024 + 1000 DIR blocks of
 // 7168 sectors each = ~3.5 GB of structure, and a 16 MB image made every
 // read past its end fail, which the ROM turned into its "press a key"
 // error loop; a real CF card is sized for
@@ -55,7 +55,7 @@
 // can be read twice from reg 0).
 //
 // UNIFORM-WRITE TABLE (virtual-format overlay): a real CF controller makes
-// Koenig's FORMAT! fast because clearing 1000 DIR blocks of 7168 sectors is
+// Koning's FORMAT! fast because clearing 1000 DIR blocks of 7168 sectors is
 // just a NAND erase; on our write-through SPI-SD image it used to be hours
 // of 0x20-sector writes. Now a completed write whose sectors are ALL one
 // byte value (0x20 DIR clears, 0xFF erases) is NOT written to the SD at all:
@@ -101,7 +101,7 @@ public:
   static const char* IMAGE_PATH;
 
   // Size of the auto-created image: 3,670,000,000 bytes = 7,167,968.75
-  // sectors - the whole Koenig FS structure (~3.5 GB: ROOT + 1000 DIR
+  // sectors - the whole Koning FS structure (~3.5 GB: ROOT + 1000 DIR
   // blocks of 3580K each) plus slack, grown with metadata-only
   // f_lseek(end)+f_truncate (no data-sector writes, no contiguity needed).
   // BLANK_IMAGE_BYTES below is only the fallback size for cards too small

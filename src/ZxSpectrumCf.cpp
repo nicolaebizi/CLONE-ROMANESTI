@@ -6,7 +6,7 @@
 const char* ZxSpectrumCf::IMAGE_PATH = "zxspectrum/cf/SUPERSPEC.CF";
 
 // Virtual image size: 3,670,000,000 bytes (~3.67 GB). Root cause (hardware
-// confirmed): Koenig's FS = ROOT (LBA 1024) + 1000 DIR blocks x 7168 sectors
+// confirmed): Koning's FS = ROOT (LBA 1024) + 1000 DIR blocks x 7168 sectors
 // = ~3.5 GB of structure; a 16 MB image made every read past its end fail,
 // which the ROM turned into its "press a key" error loop at LBA 0x202020
 // (DIR #293). The file is grown to its full size with METADATA-ONLY FatFs
@@ -503,7 +503,7 @@ void ZxSpectrumCf::regWrite(uint8_t idx, uint8_t value) {
 // ---- uniform-write table (virtual-format overlay) ------------------------
 
 // Record a uniform sector run: extend the previous adjacent same-value run
-// when possible (Koenig's FORMAT! clears 1000 DIR blocks sequentially, so
+// when possible (Koning's FORMAT! clears 1000 DIR blocks sequentially, so
 // the whole ~3.5 GB of 0x20 coalesces into few entries; a run longer than a
 // u16 count starts a new entry), skip an exact duplicate, otherwise append.
 // Returns false when the table is full -> the caller falls back to a real

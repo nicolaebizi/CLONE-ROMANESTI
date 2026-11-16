@@ -507,7 +507,7 @@ void ZxSpectrum::reset(ZxSpectrumType type)
     memset(_hc88Vram, 0, sizeof(_hc88Vram));
   }
 #if PICO_RP2350
-  // ZX48 SuperSpec: zero the extra 32K RAM bank (the 4164 pair Koenig added,
+  // ZX48 SuperSpec: zero the extra 32K RAM bank (the 4164 pair Koning added,
   // stored in the TIM-S pool's banks 8-9 - shared with the +3s shadow slots
   // 0-1, see ssExtra()) so the DOS bank executes against a deterministic
   // state. Machine-exclusive pools: the +3s re-copies its shadow pages from
