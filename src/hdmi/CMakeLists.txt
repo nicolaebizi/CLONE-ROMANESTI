@@ -751,6 +751,16 @@ target_compile_definitions(ZX-MURMULATOR_HDMI_I2S_AUDIO_640x480x60Hz PRIVATE
   ${zxspectrum_murmulator_hdmi_nespad_defines}
 )
 
+# SDK >= 2.x board headers (pico2) contain pico_board_cmake_set(...) /
+# pico_board_cmake_set_default(...) marker macros which pico.h defines as
+# no-ops. libdvi's tmds_encode.S includes pico/config.h directly (bypassing
+# pico.h), so when assembling for rp2350 the markers leak into the
+# assembler. Define the markers empty for this target only.
+target_compile_options(ZX-MURMULATOR_HDMI_I2S_AUDIO_640x480x60Hz PRIVATE
+  "-Dpico_board_cmake_set(x,y)="
+  "-Dpico_board_cmake_set_default(x,y)="
+)
+
 target_compile_definitions(ZX-MURMULATOR_HDMI_I2S_AUDIO_720x576x50Hz PRIVATE
   ${murmulator_common_defines}
   ${zxspectrum_pico_dv_i2saudio_defines}
