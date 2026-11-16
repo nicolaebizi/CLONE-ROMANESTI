@@ -63,3 +63,16 @@ target_include_directories(cf_tests PRIVATE
 )
 add_test(NAME cf_suite COMMAND cf_tests)
 set_tests_properties(cf_suite PROPERTIES TIMEOUT 10)
+
+# CUB-Z DVI 1bpp palette-encode desk simulation (test_cubz_tmds.cpp):
+# header-only code under test (src/ZxCubzTmdsEncode.h); the TMDS symbol
+# encoder is replicated verbatim from PicoDVI libdvi.  Self-contained
+# PASS/FAIL harness, no Unity.
+add_executable(cubz_tmds_tests
+  test_cubz_tmds.cpp
+)
+target_include_directories(cubz_tmds_tests PRIVATE
+  ${PICO_PROJECT_FOLDER}/src
+)
+add_test(NAME cubz_tmds_suite COMMAND cubz_tmds_tests)
+set_tests_properties(cubz_tmds_suite PROPERTIES TIMEOUT 10)

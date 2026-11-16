@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 fruit-bat
 #include "ZxSpectrumPrepareDviScanline.h"
+#include "ZxCubzTmdsEncode.h"
+#include <string.h>
 
 extern "C" {
 #include "dvi_serialiser.h"
 #include "common_dvi_pin_configs.h"
+#include "tmds_encode.h"
 #include "tmds_encode_zxspectrum.h"
 }
 #include "ZxSpectrumDisplay.h"
@@ -213,62 +216,69 @@ void __not_in_flash_func(zx_prepare_hdmi_scanline_cobra80)(
 // pixel per output pixel), row-remapped with the shared cubz_lines[] table and
 // scrolled by the $F2 SCROLL latch.  TMDS twin of
 // zx_prepare_scanvideo_scanline_cubz: same 512-wide line from _RAM[4], same
-// margins ((DISPLAY_WIDTH_PIXELS - 512) / 2 black pixels each side), same
-// colours - black background, bright green ink (ZX attribute $C0, matching the
-// VGA's zxd_colour_words[12] on zxd_colour_words[0]).  Encoded one word (2
-// pixels) at a time per channel with the words of the proven
-// palettised_2bpp_tables, selected through the existing
-// attr_to_colour_chan_X tables like tmds_encode_screen does.
+// margins ((active width - 512) / 2 black pixels each side), same colours -
+// black background, bright green ink.
+//
+// Encoded with libdvi's full-resolution 1bpp palette path
+// (tmds_setup_palette24_symbols + tmds_encode_palette_data with
+// palette_bits = 1, the proven encode of the mandel-full / vista-palette DVI
+// apps): the line is expanded to one palette-index byte per pixel (2-entry
+// palette {black, bright green}, 64 black margin pixels each side) and
+// encoded in one pass to 3 x (width / 2) TMDS words, one 10-bit symbol per
+// pixel per channel.
+//
+// The previous revision was broken two ways: it translated the colour through
+// attr_to_colour_chan_X[0xC0], but $C0 (bright green ink on black paper) maps
+// to the all-black palette entry there (black drawn on black), and it selected
+// the words of palettised_2bpp_tables, which carry the same colour on both
+// pixels of a word (pixel doubling), so single-pixel patterns garbled.  It
+// also used 32-pixel margins, leaving the tail of the scanline buffer
+// unwritten on every line.
 void __not_in_flash_func(zx_prepare_hdmi_scanline_cubz)(
   struct dvi_inst *dvi,
   uint32_t y,
   uint8_t* vram,
   uint8_t scroll
 ) {
-  static uint32_t cubz_words[3][4];
-  static bool cubz_words_ready = false;
+  // 2-entry 24-bit palette translated to TMDS symbols: per channel 4 words
+  // (colour 0 negative/positive disparity, colour 1 negative/positive).
+  static uint32_t cubz_palette[12];
+  // VRAM byte -> 8 packed pixel bytes (2 words), palette index in bit 2,
+  // MSB = leftmost pixel (same bit order as the VGA encoder).
+  static uint32_t cubz_lut[ZX_CUBZ_TMDS_LUT_WORDS];
+  // One palette-index byte per pixel, word aligned.  The black margins are
+  // set once and never touched.
+  static uint32_t cubz_linepix[ZX_CUBZ_TMDS_LINE_WORDS];
+  static uint32_t cubz_margin_words;  // margin size in words (per side)
+  static bool cubz_ready = false;
 
-  if (!cubz_words_ready) {
-    // Bright green ink ($C0: ink = colour 4 green + bright, paper = black),
-    // translated to the per-channel b0b1f1f0 palette nibbles exactly like
-    // tmds_encode_screen translates an attribute byte.
-    const uint8_t attr = 0xC0;
-    const uint8_t *chan[3] = {
-      attr_to_colour_chan_B, attr_to_colour_chan_G, attr_to_colour_chan_R
-    };
-    for (int plane = 0; plane < 3; ++plane) {
-      const uint32_t *lut =
-        (const uint32_t *)(palettised_2bpp_tables + (chan[plane][attr] << 5));
-      // lut[0] = off/off, lut[1] = left off/right on,
-      // lut[2] = left on/right off, lut[3] = on/on (left pixel = LSB symbol).
-      cubz_words[plane][0] = lut[0];
-      cubz_words[plane][1] = lut[1];
-      cubz_words[plane][2] = lut[2];
-      cubz_words[plane][3] = lut[3];
-    }
-    cubz_words_ready = true;
+  if (!cubz_ready) {
+    // ZX bright green on black (24-bit RGB: red<<16 | green<<8 | blue), the
+    // same colours as the VGA twin's zxd_colour_words[12] on
+    // zxd_colour_words[0].
+    const uint32_t palette24[2] = { 0x000000, 0x00ff00 };
+    tmds_setup_palette24_symbols(palette24, cubz_palette, 2);
+    zx_cubz_tmds_build_lut(cubz_lut);
+    memset(cubz_linepix, 0, sizeof(cubz_linepix));
+    cubz_margin_words =
+      (dvi->timing->h_active_pixels - 512) >> 3;  // (margin px per side) / 4
+    cubz_ready = true;
   }
 
   zx_cubz_lines_init();
 
   uint32_t *tmdsbuf;
   queue_remove_blocking(&dvi->q_tmds_free, &tmdsbuf);
-  uint32_t *p = tmdsbuf;
-  const uint32_t marginL = DISPLAY_BORDER_PIXELS_LEFT;
-  const uint32_t marginR = DISPLAY_BORDER_PIXELS_RIGHT;
   const uint8_t *s = vram + ((cubz_lines[y < 240 ? y : 239] + scroll) & 255);
 
-  for (int plane = 0; plane < 3; ++plane) {
-    const uint32_t *w = cubz_words[plane];
-    if (marginL) p = tmds_encode_border(marginL, plane, p, 0);
-    for (uint32_t c = 0; c < 64; ++c) {
-      const uint8_t b = s[c << 8];
-      *p++ = w[((b >> 6) & 1) | ((b >> 6) & 2)];
-      *p++ = w[((b >> 4) & 1) | ((b >> 4) & 2)];
-      *p++ = w[((b >> 2) & 1) | ((b >> 2) & 2)];
-      *p++ = w[(b & 1) | (b & 2)];
-    }
-    if (marginR) p = tmds_encode_border(marginR, plane, p, 0);
-  }
+  // Refill only the 512 screen pixels (64 VRAM bytes, byte-per-8-px stride,
+  // identical indexing to the VGA encoder); margins stay colour 0.
+  zx_cubz_tmds_fill_line(cubz_linepix, cubz_margin_words, cubz_lut, s);
+  // One 10-bit TMDS symbol per pixel per channel: width/2 words per plane,
+  // planes in order blue, green, red - exactly the full scanline buffer.
+  tmds_encode_palette_data(
+    cubz_linepix, cubz_palette, tmdsbuf, dvi->timing->h_active_pixels, 1
+  );
+
   queue_add_blocking(&dvi->q_tmds_valid, &tmdsbuf);
 }
