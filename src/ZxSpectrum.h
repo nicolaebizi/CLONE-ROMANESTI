@@ -6,6 +6,7 @@
 #include "Z80.h"
 #include "hc2000_rom.h"
 #include "ZxSpectrumHcFdc.h"
+#include "ZxSpectrumCf.h"
 #include "ZxSpectrumKeyboard.h"
 #include "ZxSpectrumJoystick.h"
 #include "InputStream.h"
@@ -35,6 +36,12 @@ enum ZxSpectrumType {
   ZxSpectrumCobra,
   // Amstrad +3B (menu item only exposed when ZX_PLUS3_ROM_AVAILABLE is set)
   ZxSpectrumPlus3,
+  // ZX Spectrum +3s (10th computer, machine #10): Cristian Secară's modified
+  // +3 with his own ROM set (NEWEPR0-3) and the custom I/O ports $7F7E/
+  // $BF7E/$DF7E/$EF7E. Phase 1: same memory map / FDC / drives / CP/M as
+  // the plain +3, plus the port readback latches and the $1FFD speed-report
+  // bits. Menu item only exposed when ZX_PLUS3_ROM_AVAILABLE is set.
+  ZxSpectrumPlus3s,
   // TIM S Plus (7th computer; boot-only phase, menu entry + transmute/reset
   // arms compile only under PICO_RP2350 so RP2040 builds are unchanged)
   ZxSpectrumTimsPlus,
@@ -44,7 +51,13 @@ enum ZxSpectrumType {
   // 16K VRAM is extra). No FDC and no hires mode this phase.
   ZxSpectrumHc88,
   // ICE Felix CUB-Z (8th computer): CP/M machine, 64K RAM + 16K video RAM
-  ZxSpectrumCubz
+  ZxSpectrumCubz,
+  // ZX48 SuperSpec (11th computer; R. Koenig's modified ZX Spectrum, the
+  // user's physical build; RP2350 only). Phase 1: 64K EPROM (4 x 16K banks
+  // 224-227) paged at $0000-$3FFF by the GAL latches (IN 224..231 / IN 243),
+  // MEMLOCK paging lock, RAMSEL-swapped 32K RAM bank at $8000-$FFFF
+  // (IN 118/119). Keyboard = standard ULA port 0xFE.
+  ZxSpectrumSuperSpec
 };
 
 // CoBra 1 mainboard v.0.2 jumper configurations (Jumper settings table).
@@ -58,6 +71,11 @@ enum ZxSpectrumIntSource {
   SyncToDisplay = 0,
   SyncToCpu     = 1
 };
+
+// ZX48K custom-ROM loader stage label (rfix4): written by the menu loader
+// before each step, printed persistently in the menu header row 1. Declared
+// here so the VGA/HDMI main files can read it too.
+extern const char* zxRomLoadStage;
 
 class ZxSpectrum {
 private:
@@ -79,6 +97,19 @@ private:
   // D1/D2 = RAM bank selection, D3 = FDC motor, D4 = disk motor). Applied by
   // applyPlus3Map(); ROM page comes from (_plus3Latch1ffd & 4) | 7FFD D4.
   uint8_t _plus3Latch1ffd;
+  // ZX Spectrum +3s: readback latches of the four custom ports. Index 0..3 =
+  // $7F7E (ROM/shadow + 48K-lock + H/V border bits), $BF7E (VRAM control +
+  // double-H-res), $DF7E (extended RAM paging), $EF7E (clock force/video/
+  // Kempston). Writes latch the value, IN returns it; every bit defaults to 0
+  // after reset. Phase 2a (NEWEPR.GEN): $7F7E bits0-3 (one-hot, bit n =
+  // ROM socket n) map shadow pool banks 8-11 (internal pages 12-15) over
+  // $0000-$3FFF when the corresponding ROM slot is the currently paged one
+  // (bit4 gates writes there, bit5 = 48K paging lock, latch-only - it does
+  // NOT gate the paging port writes, see the L3 hardware-log note in
+  // writeByte; bits 6/7 border flags still latch-only) and $DF7E bit3 maps the shadow
+  // banks at $C000-$FFFF (pool bank = 8 + ($7FFD & 3)); $EF7E bit7 enables
+  // the Kempston joystick port. $BF7E and the remaining bits stay latch-only.
+  uint8_t _plus3sLatch[4];
   // Turbo Spectrum: value last OUT to an even port (F5) and the effective
   // mapping config (bits 6:5, CE / SM) applied by applyTurboMap().
   uint8_t _feReg;
@@ -160,6 +191,22 @@ private:
   volatile uint32_t _rdPB   = 0; // $0EFD + $0FFD reads combined
   volatile uint32_t _rdFE = 0; // $FE (ULA keyboard) reads
 #endif
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  // diag10: +3s port WRITE/READ ring. Logs the last 256 port events on the
+  // +3s machine only: writes to 1FFD/7FFD/7F7E/BF7E/DF7E/EF7E and reads of
+  // the same ports (incl. the 1FFD/7FFD readbacks - the read values are
+  // what the stock ROM's IN-modify-OUT paging loops feed back into the
+  // next OUT). A few cycles per event, pushed from the readIO/writeIO
+  // Plus3s branches and shown on the menu diag lines at the hang point.
+  // diag12: ring enlarged 24 -> 256 entries (4B each = 1KB RAM) so the
+  // menu can show a window 40 events back (idx-45..idx-41) covering the
+  // loader's mid-sequence that the old 24-entry ring overwrote with the
+  // later boot writes. The same two push sites (readIO/writeIO Plus3s
+  // branches) still feed it, one entry per event.
+  struct Plus3sPortOp { volatile uint16_t port; volatile uint8_t val; volatile uint8_t isRead; };
+  volatile Plus3sPortOp _s3Ops[256];
+  uint8_t _s3Idx = 0;     // overwrite index counter (wraps)
+#endif
   // ICE Felix HC88 (phase 1; reference fuse machines/hc88.c):
   // the 64K main RAM is the low half of the shared base _RAM pool (banks
   // 0-3 of eight being always allocated and memset on every machine reset;
@@ -189,6 +236,56 @@ private:
   volatile uint32_t _hc88VramWr = 0;   // byte writes landing in _hc88Vram via the HC88 write path
   volatile uint32_t _hc88Q0Wr = 0;     // writes landing in Q0 RAM beneath the ROM overlay
   volatile uint8_t _hc88LatchLast = 0; // last value written to the motherboard latch
+#if PICO_RP2350
+  // ZX48 SuperSpec (R. Koenig's machine; GAL SUPERSPEC.PLD + the decoded
+  // port table in roeloef/STUDIU_EMULARE_ROELOF.md):
+  // _ssEpBank: EPROM bank window at $0000-$3FFF. The GAL latches epA14/15/16
+  //   from A0/A1/A2 of any IN with A7=1, A3=0 (transparent during the read,
+  //   held otherwise, frozen while MEMLOCK). The physical board has a 64K
+  //   EPROM (27C512) with epA16 unwired, so the effective bank = latch & 3
+  //   (banks 224-227 of supr_rom; IN 228..231 alias to 224..227). The latch
+  //   stores the full 3 bits (a & 7) for state fidelity.
+  // _ssRamsel: RAMSEL latch (IN 118 = 0, IN 119 = 1; any IN with A7=0, A3=0
+  //   drives it from A0). Selects which 32K RAM shows at $8000-$FFFF.
+  // _ssMemlock: MEMLOCK latch (set by any IN with A7=1, A4=1, A3=0, e.g.
+  //   IN 243 = bank 227 + lock; "227+16" in the ROM source). Set-only: it
+  //   has no GAL reset term, only /RESET releases it.
+  // _ssWeArmed: the epromwe write-protect flip-flop (D=reset, clocked by
+  //   any RAMSEL pulse). Latch-only this phase: there is no writable flash
+  //   emulation, the EPROM window is always read-only.
+  uint8_t _ssEpBank;
+  bool _ssRamsel;
+  bool _ssMemlock;
+  bool _ssWeArmed;
+  // The extra 32K RAM bank (4164 pair added by Koenig in place of the 48K
+  // machine's upper RAM chips): shown at $8000-$FFFF while RAMSEL = 1. DOS
+  // system variables live here (Ooffset1..4 at $C022-$C025).
+  // Storage: RELOCATED OUT OF BSS into the TIM-S pool's banks 8-9 (BSS fix:
+  // the +32K array collapsed the RP2350 heap margin and killed the scanvideo
+  // runtime buffer allocations -> no VGA). The pool has no truly free banks
+  // (12/12 used: 0-7 TIM system RAM, 8-11 TIM system RAM AND the +3s shadow
+  // pages), so SuperSpec shares banks 8-9 with the +3s shadow slots 0-1 -
+  // the pools are machine-exclusive (only one machine type runs at a time)
+  // and each machine zeroes its own range on reset (SuperSpec: banks 8-9;
+  // +3s: banks 8-11; TIM: the whole pool), so no state bleeds across a
+  // machine switch (same rationale as the +3s/TIM pool sharing).
+  inline uint8_t* ssExtra() { return (uint8_t*)&_timsRAM[8][0]; }
+#endif
+  // ZX48 SuperSpec phase 2: the machine's own CompactFlash in MEMORY MODE,
+  // backed by a raw image file on the emulator's SD card (ZxSpectrumCf).
+  // Attached by the platform main files via setCf(); a null pointer (or a
+  // missing image file) leaves the CF ports returning the no-media state.
+  ZxSpectrumCf* _ssCf = 0;
+public:
+  void setCf(ZxSpectrumCf* cf) { _ssCf = cf; }
+  // Live CF state for the menu diag line (fix5, phase 2): false when the
+  // SuperSpec CF is not attached on this build.
+  bool cfDiag(ZxSpectrumCf::CfDiag* d) const {
+    if (!_ssCf) return false;
+    _ssCf->diag(d);
+    return true;
+  }
+private:
   bool _ear;
   uint32_t _earInvert;
   uint32_t _earDc;
@@ -327,6 +424,19 @@ private:
       return;
     }
 #if PICO_RP2350
+    // ZX48 SuperSpec writes: $0000-$3FFF is the EPROM bank window with no
+    // RAM beneath it - writes are dropped (the GAL epromwe flip-flop holds
+    // the EPROM write-protected after the first RAMSEL pulse; latch-only
+    // this phase, the window is always read-only). $4000-$7FFF is the fixed
+    // RAM and $8000-$FFFF the RAMSEL-selected 32K bank, both plain RAM
+    // through the page table applied by applySuperSpecMap().
+    if (_type == ZxSpectrumSuperSpec) {
+      if (address < 0x4000) return;
+      *(memaddr(address)) = value;
+      return;
+    }
+#endif
+#if PICO_RP2350
     // TIM-S Plus writes. Translation of fuse memory_pages.c writebyte_internal
     // (VM order: the tims_plus_video_write VRAM hook runs first, then the
     // write-map store) together with tims_plus_memory_map writable gating:
@@ -381,6 +491,30 @@ private:
       *(memaddr(address)) = value;
       return;
     }
+#if PICO_RP2350
+    // ZX Spectrum +3s (phase 2a, NEWEPR.GEN): a shadow pool bank is mapped
+    // at $0000-$3FFF (7F7E one-hot bit n = ROM socket n, normal paging mode
+    // only, and only when that socket is the currently selected ROM - same
+    // condition as applyPlus3sMap, so writes land in the same bank the CPU
+    // reads/fetches). Writes into the shadowed window are gated by bit4
+    // ("write-enable in ROM mode": 0 = enabled, 1 = disabled - the NEWEPR.GEN
+    // EXIT routine sets it BEFORE the copies, and the copies go through
+    // $C000, which stays writable). With no shadow page mapped for the
+    // current socket, the standard ROM write-protection below applies. The
+    // shadow pages physically live in the RP2350-only TIM-S pool's banks
+    // 8-11 (machine-exclusive pools; see applyPlus3sMap; banks 8-9 also
+    // host SuperSpec's extra 32K RAM - ssExtra(), per-machine reset zeroing
+    // keeps the states apart).
+    if (_type == ZxSpectrumPlus3s && address < 0x4000 && !(_plus3Latch1ffd & 0x01)) {
+      const uint8_t wrSlot = (uint8_t)(((_plus3Latch1ffd & 4) ? 2 : 0) | ((_portMem >> 4) & 1));
+      if (_plus3sLatch[0] & (1 << wrSlot)) {
+        if (!(_plus3sLatch[0] & 0x10)) {
+          _timsRAM[8 + wrSlot][address] = value;
+        }
+        return;
+      }
+    }
+#endif
     if (address < 0x4000) {
       // Turbo Spectrum: $0000-$3FFF is ROM only while FE_CFG=00. After the
       // boot switches to 64K (20) or Spectrum (60) mode it is RAM and must
@@ -391,7 +525,8 @@ private:
       // ZX Spectrum +3 special paging mode (port $1FFD bit 0): applyPlus3Map()
       // pages RAM banks over $0000-$3FFF, so the low 16 KiB is RAM and must
       // accept writes (all-RAM mode, page 0 maps to _RAM[0]).
-      const bool plus3AllRam = _type == ZxSpectrumPlus3 && (_plus3Latch1ffd & 0x01);
+      const bool plus3AllRam = (_type == ZxSpectrumPlus3 || _type == ZxSpectrumPlus3s) &&
+        (_plus3Latch1ffd & 0x01);
       if (!hcLowRam && !hcIf1Ram && !plus3AllRam && !(_type == ZxSpectrumTurbo && (_feCfg & 0x60) != 0x00)) return;
     }
     // HC2000: with latch D1 the roman overlay is ROM; writes are lost
@@ -404,6 +539,53 @@ private:
   {
     if (_type == ZxSpectrumCobra) return cobraReadIO(address);
     if (_type == ZxSpectrumCubz) return cubzReadIO(address);
+#if PICO_RP2350
+    // ZX48 SuperSpec: the GAL latches are driven by every IN (the set terms
+    // all require !iorq & !rd; OUT cycles only hold, rd=1 in the hold terms).
+    // The GAL only has A0-A7 as inputs, so the decode is on the LOW byte -
+    // for IN A,(n) both bus halves carry n, for IN r,(C) it is C. Semantics
+    // (SUPERSPEC.PLD + STUDIU_EMULARE_ROELOF.md §4):
+    //  - A7=1, A3=0: EPROM bank latch epA16/15/14 <- A2/A1/A0 (IN 224..231,
+    //    also 0x90/0xF0 families and IN 243), masked to & 3 (27C512, epA16
+    //    unwired). Frozen while MEMLOCK.
+    //  - A7=1, A4=1, A3=0: MEMLOCK set (set-only latch, e.g. IN 243 = bank
+    //    227 + lock, IN 0x90 family). Released only by reset.
+    //  - A7=0, A3=0: RAMSEL <- A0 (IN 118 = bank 0, IN 119 = extra bank;
+    //    every such IN drives it, Kempston 0x1F included - authentic GAL
+    //    behaviour, no joystick awareness on the board). Frozen while
+    //    MEMLOCK; each RAMSEL transition clocks the epromwe flip-flop into
+    //    the write-protected state (latch-only).
+    // Even ports (0x76/0x77, ULA 0xFE) fall through to the standard ULA
+    // keyboard path below; odd unmatched ports return open bus (0xFF) - the
+    // bank-switch result in A is not used by the ROM.
+    if (_type == ZxSpectrumSuperSpec) {
+      const uint8_t a = (uint8_t)address;
+      if (!_ssMemlock) {
+        if ((a & 0x88) == 0x80) {
+          const uint8_t bank = a & 0x07;
+          if (bank != _ssEpBank) { _ssEpBank = bank; applySuperSpecMap(); }
+        }
+        if ((a & 0x88) == 0x00) {
+          const bool r = (a & 0x01) != 0;
+          if (r != _ssRamsel) { _ssRamsel = r; _ssWeArmed = true; applySuperSpecMap(); }
+        }
+        if ((a & 0x98) == 0x90) {
+          _ssMemlock = true;
+        }
+      }
+      // Phase 2: CompactFlash in MEMORY MODE. GAL cfread active term:
+      // !epA15 & !epA14 & !iorq & !rd & !A7 & A3 - the CF is only decoded
+      // while the EPROM bank latch holds the 224 family (bank bits 0-1
+      // clear, epA14=bit0/epA15=bit1 of _ssEpBank); low byte A7=0, A3=1
+      // (0x??7F); the register index comes from A8/A14/A15. Any other
+      // combination is an undecoded port (floating bus 0xFF through the
+      // default below).
+      if ((a & 0x88) == 0x08 && _ssCf && (_ssEpBank & 3) == 0) {
+        return _ssCf->readReg(zxSuperSpecCfRegIndex(address));
+      }
+      // no return: ULA (even ports) and the open-bus default below apply
+    }
+#endif
 #if PICO_RP2350
     // TIM-S Plus motherboard ports (fuse machines_periph.c tims_io_ports,
     // exact 16-bit decode): Even ports stay on the standard ZX ULA keyboard
@@ -457,6 +639,29 @@ private:
         default: return 0xFF;
       }
     }
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+    // ZX Spectrum +3s (phase 2a fix): the four motherboard ports decode on
+    // the exact 16-bit address and are EVEN (bit0 clear), so they must be
+    // matched BEFORE the standard even-port ULA keyboard path below. The
+    // NEWEPR.GEN EXIT routine reads the latches back (IN A,(#7F7E), IN
+    // D,(#DF7E), IN A,(#EF7E)); when these INs fell through to the ULA path
+    // they returned keyboard data (idle row mask $7F -> $BF, $FF with EAR),
+    // which the routine ORs #10 into and latches: 7F7E=$BF set bits0-3
+    // (shadow page at $0000-$3FFF in place of the ROM) AND bit5 (the 48K
+    // paging lock), and DF7E=$BF left bit3 stuck - the loader returned into
+    // the zeroed shadow page, NOP-sledged into the screen at $4000 and the
+    // machine destroyed itself ("16K of garbage over the screen").
+    if (_type == ZxSpectrumPlus3s) {
+      switch (address) {
+        // diag10: log the latch readback INs too (NEWEPR.GEN EXIT reads
+        // these; the returned bytes drive its OR/OUT cycles).
+        case 0x7F7E: plus3sOpPush(address, _plus3sLatch[0], 1); return _plus3sLatch[0];
+        case 0xBF7E: plus3sOpPush(address, _plus3sLatch[1], 1); return _plus3sLatch[1];
+        case 0xDF7E: plus3sOpPush(address, _plus3sLatch[2], 1); return _plus3sLatch[2];
+        case 0xEF7E: plus3sOpPush(address, _plus3sLatch[3], 1); return _plus3sLatch[3];
+      }
+    }
+#endif
     if (!(address & 0x0001)) {
 #if PICO_RP2350
       // fix3 phase 2: count $FE (ULA keyboard) reads in TIM mode only.
@@ -499,20 +704,66 @@ private:
     if (_type == ZxSpectrumPlus3 && (address & 0xF002) == 0x3000) {
       return _hcFdc.readData();
     }else
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+    // ZX Spectrum +3s custom I/O (NEWEPR.GEN / cs alternatively-website):
+    // the four motherboard ports decode on the exact 16-bit address and
+    // IN returns the latched value (all bits 0 after reset). Phase 1 is
+    // readback only - the latched bits do not change anything yet. The
+    // +3s ROM2 (+3DOS) delay routines (0x2D00-0x2D99) also read the CPU
+    // clock from bits 5-7 of IN $1FFD (bit5 = 3.5MHz, bit6 = 7MHz, bit7 =
+    // 14MHz): we emulate the 3.5MHz-equivalent speed, so bit5 reads 1 and
+    // bits 6/7 read 0. The plain +3 keeps its old behaviour (open bus).
+    if (_type == ZxSpectrumPlus3s) {
+      // The four motherboard ports ($7F7E/$BF7E/$DF7E/$EF7E, all EVEN) are
+      // matched earlier in this function, before the even-port ULA path;
+      // this odd-port branch only handles the +3 FDC ports and the $1FFD
+      // readback (NEWEPR.GEN also INs from $1FFD for the speed bits).
+      if ((address & 0xF002) == 0x2000) return _hcFdc.readStatus();
+      if ((address & 0xF002) == 0x3000) return _hcFdc.readData();
+      if ((address & 0xF002) == 0x1000) {
+        // diag10: 1FFD readback IN (speed bits) goes into the port ring.
+        const uint8_t v = (_plus3Latch1ffd & 0x1F) | 0x20;
+        plus3sOpPush(address, v, 1);
+        return v;
+      }
+    }else
+#endif
     if (address == 0xFFFD) {
       return _ay.readData();
     }else
-    if (address == 0x7FFD && (_type == ZxSpectrum128k || _type == ZxSpectrumPlus3)) {
+    if (address == 0x7FFD && (_type == ZxSpectrum128k || _type == ZxSpectrumPlus3 ||
+        _type == ZxSpectrumPlus3s)) {
+      // +3s (phase 2a, required by NEWEPR.GEN): IN #7FFD returns the paging
+      // latch readback with NO side effect. The 128K/+3 "reading latches #FF"
+      // quirk would set the paging lock and then ignore the loader's OUT (the
+      // GEN EXIT routine does IN E,(C) from #7FFD and restores it, and the
+      // +3s ROM additions use IN A,(C) / OR #10 / OUT (C),A cycles).
+      if (_type == ZxSpectrumPlus3s) {
+        // diag10: 7FFD readback IN goes into the port ring (the value the
+        // UTL-style IN E,(#7FFD); OUT (#E&F8)|n loops see).
+        plus3sOpPush(address, _portMem, 1);
+        return _portMem;
+      }
       // reading #7FFD port is the same as writing #FF into it.
       uint8_t value = 0xFF;
       if ((_portMem & 0x20) == 0) {
         _portMem = value;
         if (_type == ZxSpectrumPlus3) applyPlus3Map();
+        else if (_type == ZxSpectrumPlus3s) applyPlus3sMap();
         else {
           setPageaddr(3, (uint8_t*)&_RAM[value & 7]);
           setPageaddr(0, (uint8_t*)((value & 0x10) ? zx_128k_rom_2 : zx_128k_rom_1));
         }
       }
+      return 0xFF;
+    }
+
+    // ZX Spectrum +3s (phase 2a): the Kempston joystick interface is enabled
+    // by $EF7E bit7 (cs port tables, wired to the menu-selected joystick
+    // source). While the bit is clear the joystick port is open bus. The
+    // clock bits ($EF7E bits0-1) stay report-only (latched) this phase.
+    if (_type == ZxSpectrumPlus3s && (address & 0x00E0) == 0 &&
+        !(_plus3sLatch[3] & 0x80)) {
       return 0xFF;
     }
 
@@ -548,6 +799,18 @@ private:
   }
 #endif
 
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  // diag10: newest-first overwrite ring push, one entry per +3s port event
+  // (isRead: 0 = OUT, 1 = IN with the value the CPU got back).
+  inline void plus3sOpPush(uint16_t port, uint8_t value, uint8_t isRead) {
+    volatile Plus3sPortOp *e = &_s3Ops[_s3Idx & 255];
+    e->port = port;
+    e->val = value;
+    e->isRead = isRead;
+    ++_s3Idx;
+  }
+#endif
+
 inline void writeIO(uint16_t address, uint8_t value)
   {
     if (_type == ZxSpectrumCobra) {
@@ -558,6 +821,25 @@ inline void writeIO(uint16_t address, uint8_t value)
       cubzWriteIO(address, value);
       return;
     }
+#if PICO_RP2350
+    // ZX48 SuperSpec writes (phase 2): the GAL cfwrite strobe decodes like
+    // cfread (low byte A7=0, A3=1 = 0x??7F, EPROM bank latch in the 224
+    // family) - command 0x20/0x30 at 0xC17F, sector count/LBA registers and
+    // the 512B data stream through 0x007F. Without this hook the DOS's OUTs
+    // fell through into the AY ($C17F & $C002 == $C000 -> writeCtrl!) and
+    // the ULA border handler (0x007F is even). Odd unmatched ports are open
+    // bus (no AY on the SuperSpec board); even ports fall through to the
+    // standard ULA $FE border/speaker handler below.
+    if (_type == ZxSpectrumSuperSpec) {
+      const uint8_t a = (uint8_t)address;
+      if ((a & 0x88) == 0x08) {
+        if (_ssCf && (_ssEpBank & 3) == 0) _ssCf->writeReg(zxSuperSpecCfRegIndex(address), value);
+        return;
+      }
+      if (address & 0x0001) return;
+      // even ports fall through to the ULA border/speaker handler below
+    }
+#endif
 #if PICO_RP2350
     // TIM-S Plus register panel (fuse tims_plus_io_write). Every decoded
     // port write re-applies the memory map. The FDC $3FFD data port and the
@@ -688,6 +970,44 @@ inline void writeIO(uint16_t address, uint8_t value)
         _hcFdc.writeDataPc(Z80_PC(_Z80), value);
         return;
       }
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+	  } else if (_type == ZxSpectrumPlus3s) {
+      // Same paging/FDC ports as the plain +3, driven by applyPlus3sMap()
+      // over the +3s ROM set. $7F7E bit5 is the +3s 48K paging lock (cs port
+      // tables); it is stored in the latch for readback fidelity but does NOT
+      // gate the paging port writes (hardware log L3: Secară's loader does
+      // IN-modify-OUT cycles whose restore writes carry bit5=1 - a write gate
+      // would drop every later 7FFD/1FFD write and the loader's shadow
+      // activation would never survive).
+      if ((address & 0xF002) == 0x1000) {
+        // diag10: log every 1FFD OUT attempt - the latch sequence is what
+        // the hang analysis needs to see.
+        plus3sOpPush(address, value, 0);
+        // No write gate: every OUT applies (latch value stored faithfully,
+        // bit5 included). The $7F7E bit5 48K-lock stays latch-only for now.
+        _plus3Latch1ffd = value;
+        applyPlus3sMap();
+        _hcFdc.setPlus3Motor((value & 8) != 0);
+        return;
+      }
+      if ((address & 0xF002) == 0x2000) return; // main status register is read-only
+      if ((address & 0xF002) == 0x3000) {
+        _hcFdc.writeDataPc(Z80_PC(_Z80), value);
+        return;
+      }
+      // Custom motherboard ports (NEWEPR.GEN / cs port tables): exact 16-bit
+      // decode. Phase 2a: the $7F7E (shadow ROM + write gate + 48K lock) and
+      // $DF7E (extended RAM at $C000) writes re-apply the memory map; $BF7E
+      // (VRAM control) and $EF7E (Kempston enable + clock, report-only) stay
+      // latch-only. Writes on any other machine type never reach here.
+      switch (address) {
+        // diag10: every motherboard-latch OUT attempt goes into the ring.
+        case 0x7F7E: plus3sOpPush(address, value, 0); _plus3sLatch[0] = value; applyPlus3sMap(); return;
+        case 0xBF7E: plus3sOpPush(address, value, 0); _plus3sLatch[1] = value; return;
+        case 0xDF7E: plus3sOpPush(address, value, 0); _plus3sLatch[2] = value; applyPlus3sMap(); return;
+        case 0xEF7E: plus3sOpPush(address, value, 0); _plus3sLatch[3] = value; return;
+      }
+#endif
 	  }
 	  if (address & 0x0001)
 	  {
@@ -703,9 +1023,26 @@ inline void writeIO(uint16_t address, uint8_t value)
   			return;
 	  	} //BFFD
 		
-      if (!(address & 0x8002) && (_type == ZxSpectrum128k || _type == ZxSpectrumPlus3))
-   		{
-        if ((_portMem & 0x20) == 0) {
+      if (!(address & 0x8002) && (_type == ZxSpectrum128k || _type == ZxSpectrumPlus3 ||
+          _type == ZxSpectrumPlus3s))
+  		{
+        // diag10: log the 7FFD OUT attempt on the +3s (every write now
+        // applies, see the phase 2a note below).
+        if (_type == ZxSpectrumPlus3s) plus3sOpPush(address, value, 0);
+        if (_type == ZxSpectrumPlus3s) {
+          // +3s (hardware log L3 fix): NO write gate on the paging latch -
+          // the loader's IN-modify-OUT restore writes carry bit5=1
+          // (7FFD=0xFE), so gating on _portMem bit5 (the plain +3 lock) or
+          // $7F7E bit5 would drop all subsequent 7FFD writes and the shadow
+          // activation would never survive. Every OUT applies; bit5 is still
+          // stored faithfully for the IN #7FFD readback. The $7F7E bit5
+          // 48K-lock is latch-only for now (no 48K restriction applied).
+          _fc += ((_portMem ^ value) >> 3) & 1;
+          _portMem = value;
+          applyPlus3sMap();
+        } else if ((_portMem & 0x20) == 0) {
+          // Plain 128K/+3: bit5 of the latch is the paging lock ("reading
+          // #7FFD writes #FF" quirk) - while set further writes are ignored.
           _fc += ((_portMem ^ value) >> 3) & 1;
           _portMem = value;
           if (_type == ZxSpectrumPlus3) applyPlus3Map();
@@ -836,13 +1173,31 @@ inline void writeIO(uint16_t address, uint8_t value)
   uint8_t cobraReadIO(uint16_t address);
   void cobraWriteIO(uint16_t address, uint8_t value);
   
+  // _RAM pool bank that stores the custom 48K ROM image (see _customRom).
+  // Highest bank of the 8-bank pool; never paged in by the 48K machine. On
+  // the 128K/+3/+3s machines this bank doubles as the SHADOW SCREEN (7FFD
+  // bit3) and on the HC2000 it holds the IF1 shadow ROM, so the menu custom-
+  // ROM load is guarded to the 48K machine only (diag9 aliasing fix).
+  enum { CustomRomBank = 7 };
+
   uint8_t _RAM[8][1<<14];
-  // Custom 16K ROM image for the 48K machine (menu option R): heap buffer
-  // allocated from the SD-copying side when an image is loaded. Null by
-  // default -> the built-in flash ROM is used. No persistence across power
-  // cycles (the pointer is a plain member, never saved). Intentionally NOT
-  // freed or cleared on reset: a reload-less "Reset 48K" keeps booting the
-  // same custom ROM within the session.
+  // Custom 16K ROM image for the 48K machine (menu option R): bank 7 of the
+  // shared _RAM pool above (pool offset _RAM + 0x1C000). No heap allocation
+  // and no extra static buffer - the image lives in a pool bank the 48K
+  // machine never touches, so it cannot steal RAM from the heap (the old
+  // 16K static member shifted/shrank the scanvideo render-buffer heap and
+  // blacked the auto VGA picture). Null pointer by default -> the built-in
+  // flash ROM is used. No persistence across power cycles (the pointer is a
+  // plain member, never saved). Intentionally NOT freed or cleared on a 48K
+  // reset: a reload-less "Reset 48K" keeps booting the same custom ROM within
+  // the session (reset() skips zeroing the bank while the 48K machine uses
+  // it). Bank 7 is idle while the 48K machine runs: its CPU pages are
+  // Q0=ROM/custom buffer, Q1=_RAM[5] (screen), Q2=_RAM[2], Q3=_RAM[0], and
+  // port $7FFD paging exists on the 128K/+3 machines only. The 128K/+3
+  // machines page bank 7 into Q3 (and HC2000 keeps its IF1 shadow in _RAM[7]),
+  // so transmute() invalidates the custom ROM whenever a non-48K machine is
+  // selected - a custom ROM must be re-selected after switching back to the
+  // 48K machine (menu row keeps the file name but the image is dropped).
   uint8_t* _customRom = 0;
 #if PICO_RP2350
   // TIM-S Plus memory (boot-only phase, RP2350 only): 12 x 16K system RAM
@@ -858,10 +1213,14 @@ inline void writeIO(uint16_t address, uint8_t value)
   void applyTurboMap();
   void applyHc2000Map();
   void applyPlus3Map();
+  void applyPlus3sMap();
 #if PICO_RP2350
   void applyTimsMap();
 #endif
   void applyHc88Map();
+#if PICO_RP2350
+  void applySuperSpecMap();
+#endif
   // 48K images run on the TURBO-SPECTRUM clone while that machine is selected
   inline ZxSpectrumType type48(ZxSpectrumType type) {
     return (type == ZxSpectrum48k && _type == ZxSpectrumTurbo) ? ZxSpectrumTurbo : type;
@@ -1001,6 +1360,39 @@ public:
   inline volatile uint32_t timsRdPb()   { return _rdPB; }
   inline volatile uint32_t timsRdFe()   { return _rdFE; }
 #endif
+  // diag8: live +3s CPU/paging readback for the menu header row 1 (strippable
+  // later). Z80_PC/Z80_SP reach the emulation core register struct (Z80.h);
+  // the latch getters return the internal state of the +3s paging latches.
+  // NOT platform-gated: ZxSpectrumMenu.cpp prints the s3 line on every
+  // machine when the +3s type is selected, and every backing member
+  // (_plus3sLatch/_plus3Latch1ffd/_portMem/screenPtr/_Z80) exists on both
+  // RP2040 and RP2350.
+  inline uint16_t dbgZ80Pc() { return Z80_PC(_Z80); }
+  inline uint16_t dbgZ80Sp() { return Z80_SP(_Z80); }
+  inline uint8_t dbgPlus3s1ffd() { return _plus3Latch1ffd; }
+  inline uint8_t dbgPlus3s7ffd() { return _portMem; }
+  inline uint8_t dbgPlus3s7f7e() { return _plus3sLatch[0]; }
+  // diag11: DF7E latch (bit3 = C000->shadow override). The loader's EXIT
+  // restore path writes this last; a stuck bit3 redirects DOS init to the
+  // shadow banks and hangs the boot at the +3DOS page-in.
+  inline uint8_t dbgPlus3sDf7e() { return _plus3sLatch[2]; }
+  // diag9: live raster screen-page probe (menu row-1 line). The +3s question
+  // was "which screen page does the renderer actually read": dbgScreenPage()
+  // resolves the live screenPtr() back to the _RAM pool bank index (5 =
+  // normal screen, 7 = shadow screen, following 7FFD bit3) and
+  // dbgScreenAddr() returns the low 16 bits of the first screen byte
+  // pointer (bank 5 and bank 7 differ by 0x8000 in the low 16 bits).
+  inline uint8_t dbgScreenPage() {
+    return (uint8_t)(((uintptr_t)(void*)screenPtr() - (uintptr_t)(void*)_RAM) >> 14);
+  }
+  inline uint16_t dbgScreenAddr() { return (uint16_t)(uintptr_t)(void*)screenPtr(); }
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  // diag10: +3s port-event ring accessors for the menu diag line
+  // (strippable later). Entries are consumed newest-first via
+  // (idx-1-n) & 23.
+  inline volatile Plus3sPortOp* plus3sOps() { return _s3Ops; }
+  inline uint8_t plus3sOpIdx() { return _s3Idx; }
+#endif
   // HC88 diag counter accessors (strippable later).
   inline volatile uint32_t hc88LatchWr() { return _hc88LatchWr; }
   inline volatile uint32_t hc88VramWr() { return _hc88VramWr; }
@@ -1008,14 +1400,22 @@ public:
   inline volatile uint8_t hc88LatchLast() { return _hc88LatchLast; }
   inline uint8_t* memPtr(uint32_t i) { return (unsigned char*)&_RAM[i]; }
   // Custom 48K ROM buffer access (menu ROM chooser copies the image here;
-  // the buffer is allocated on the heap on first use)
+  // the buffer is bank 7 of the shared _RAM pool on every board - no heap
+  // allocation, no extra static buffer). Only the menu path guarded to the
+  // 48K machine may write it: bank 7 is the 128K/+3/+3s shadow screen bank
+  // and the HC2000 IF1 shadow while other machine types run.
   inline uint8_t* customRom() {
-    if (!_customRom) _customRom = (uint8_t*)malloc(1 << 14);
+    if (!_customRom) _customRom = (uint8_t*)&_RAM[CustomRomBank];
     return _customRom;
   }
   inline bool customRomLoaded() { return _customRom != 0; }
   inline void customRomLoaded(bool loaded) {
-    if (!loaded && _customRom) { free(_customRom); _customRom = 0; }
+    if (!loaded) {
+      // Invalidate only: bank 7 is left as-is and gets zeroed by the next
+      // reset() of any machine (the machine-switch guard runs through
+      // transmute(), which fires before reset() zeroes the pool).
+      _customRom = 0;
+    }
   }
   inline uint32_t flipsPerFrame() { return _fcf; }
   void reset(ZxSpectrumType type);

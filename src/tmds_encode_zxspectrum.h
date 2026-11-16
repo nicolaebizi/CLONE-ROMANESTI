@@ -13,6 +13,18 @@ uint32_t * __not_in_flash_func(tmds_encode_screen)(
   uint32_t plane
 );
 
+// Variable length screen encode: ncells 8-pixel cells (one byte of pixel
+// data and one byte of attribute per cell). Used for the CoBra 80 chr/lin
+// border cells.
+uint32_t * __not_in_flash_func(tmds_encode_cobra80_cells)(
+  const uint8_t *screenRowPtr,
+  const uint8_t	*attributeRowPtr,
+  uint32_t *tmdsbuf,
+  uint32_t ncells,
+  uint32_t flash,
+  uint32_t plane
+);
+
 
 uint32_t *__not_in_flash_func(tmds_encode_border)(
   uint32_t nchars,   // r0 is width in characters

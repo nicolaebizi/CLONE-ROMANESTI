@@ -72,6 +72,7 @@ set(zxspectrum_common_src
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumNespadJoystick.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrum.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumHcFdc.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ZxSpectrumCf.cpp
   ${CMAKE_CURRENT_LIST_DIR}/CobraFloppy.cpp
   ${CMAKE_CURRENT_LIST_DIR}/QuickSave.cpp
   ${CMAKE_CURRENT_LIST_DIR}/PulseProc.cpp
@@ -203,6 +204,7 @@ endfunction()
 add_subdirectory(hdmi)
 add_subdirectory(picomputer)
 add_subdirectory(vga)
+add_subdirectory(vgahdmi)
 add_subdirectory(picovga)
 
 add_custom_target (relevant)

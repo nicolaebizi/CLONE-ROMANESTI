@@ -15,6 +15,10 @@
 #include "ZxSpectrumAudioVol.h"
 #include "ZxSpectrumAudioDriver.h"
 #include "ZxSpectrumVideoDriver.h"
+#include "ZxSpectrumDualJoystick.h"
+#ifdef ZX_VIDEO_AUTO_DETECT
+#include "VideoAutoDetect.h"
+#endif
 #include "PicoCoreVoltage.h"
 #include "CobraDiskFile.h"
 #if PICO_RP2350
@@ -183,6 +187,8 @@ ZxSpectrumMenu::ZxSpectrumMenu(
     _pathQuickSaves(&_pathSnaps, "quicksaves"),
     // Custom 48K ROM images folder (main menu option R)
     _pathRoms(&_pathZxSpectrum, "roms"),
+    // ZX48 SuperSpec CF image folder (phase 2): zxspectrum/cf
+    _pathCf(&_pathZxSpectrum, "cf"),
     _pathDisks(&_pathZxSpectrum, "disks"),
     _pathCobraDisks(&_pathDisks, "cobra1"),
     _pathDisksHc2000(&_pathDisks, "hc2000"),
@@ -195,7 +201,7 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _zxSpectrumSettings(settings),
   _tis(0),
 
-  _k1('1'), _k2('2'), _k3('3'), _k4('4'), _k5('5'), _k6('6'), _k7('7'), _k8('8'), _k9('9'), 
+  _k0('0'), _k1('1'), _k2('2'), _k3('3'), _k4('4'), _k5('5'), _k6('6'), _k7('7'), _k8('8'), _k9('9'), 
   _kV('v'), _kK('k'), _kS('s'), _kQ('q'), _kC('c'), _kD('D'),
   // Disk menu (D) rows 10-13: the CUB-Z / HC88 rows reuse the shared letter
   // quick keys (_kC/_kD are the main-menu CoBra / Disk keys - quick keys are
@@ -203,6 +209,10 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _kA('A'), _kB('B'),
   // Main menu option R: custom 48K ROM (no other quick key uses 'R')
   _kR('R'),
+#if PICO_RP2350
+  // Reset menu (row 11): ZX48 SuperSpec quick key
+  _kE('E'),
+#endif
 
   _wiz(_wizLeftMargin, 6, _wizCols, _explorerRows * _explorerRowsPerFile),
   _wizUtils(&_wiz, _explorerRowsPerFile, &_k1, &_k2),
@@ -292,12 +302,14 @@ ZxSpectrumMenu::ZxSpectrumMenu(
 
   _reset(0, 0, _wizCols,
 #if PICO_RP2350
-    // One extra row for the RP2350-only TIM S Plus reset entry
-    // (the list scrolls anyway; HC88 is present on every platform)
-    9 * SZ_MENU_SEP,
+    // One extra row for the RP2350-only TIM S Plus reset entry, plus the
+    // +3s entry (the list scrolls anyway; HC88 is present on every platform)
+    // and the ZX48 SuperSpec entry (machine #11, RP2350 only):
+    // 48K/128K/Turbo/HC2000/CoBra/+3/TIM/CUB-Z/HC88/+3s/SuperSpec
+    11 * SZ_MENU_SEP,
 #else
-    // 48K/128K/Turbo/HC2000/CoBra/+3/CUB-Z/HC88
-    8 * SZ_MENU_SEP,
+    // 48K/128K/Turbo/HC2000/CoBra/+3/CUB-Z/HC88/+3s
+    9 * SZ_MENU_SEP,
 #endif
     _menuRowsPerItem),
   _reset48kOp("Reset 48K ZX Spectrum"),
@@ -310,8 +322,12 @@ ZxSpectrumMenu::ZxSpectrumMenu(
 #endif
   _resetHc88Op("Reset HC88"),
   _resetCubzOp("Reset CUB-Z"),
+#if PICO_RP2350
+  _resetSuperSpecOp("Reset ZX48 SuperSpec"),
+#endif
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   _resetPlus3Op("Reset ZX Spectrum +3"),
+  _resetPlus3sOp("Reset ZX Spectrum +3s"),
 #endif
 
   _cobra(0, 0, _wizCols, 9, _menuRowsPerItem),
@@ -490,8 +506,10 @@ ZxSpectrumMenu::ZxSpectrumMenu(
       case ZxSpectrumHc2000: m = "HC2000" ; break;
       case ZxSpectrumCobra: m = "CoBra 1" ; break;
       case ZxSpectrumPlus3: m = "ZX Spectrum +3" ; break;
+      case ZxSpectrumPlus3s: m = "ZX Spectrum +3s" ; break;
 #if PICO_RP2350
       case ZxSpectrumTimsPlus: m = "TIM S Plus" ; break;
+      case ZxSpectrumSuperSpec: m = "ZX48 SuperSpec" ; break;
 #endif
       case ZxSpectrumHc88: m = "HC88" ; break;
       case ZxSpectrumCubz: m = "CUB-Z" ; break;
@@ -719,12 +737,30 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   // type + memory map + VRAM video only; disk mounts live in the HC2000
   // disk menu below.
   _reset.addOption(_resetHc88Op.addQuickKey(&_k9));
+  // ZX Spectrum +3s (machine #10): row 10, quick key '0' (free since the
+  // PRAE machine was abandoned). Uses the +3 drive/disk machinery.
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  _reset.addOption(_resetPlus3sOp.addQuickKey(&_k0));
+#endif
+#if PICO_RP2350
+  // ZX48 SuperSpec (machine #11, RP2350 only): after the +3s entry, quick
+  // key 'E' (0-9 and the letters used by the other menus are taken).
+  _reset.addOption(_resetSuperSpecOp.addQuickKey(&_kE));
+#endif
   _resetCubzOp.toggle([=]() {
     _snapName.clear();
     _zxSpectrum->reset(ZxSpectrumCubz);
     _wiz.pop(true);
   });
   _reset.enableQuickKeys();
+
+#if PICO_RP2350
+  _resetSuperSpecOp.toggle([=]() {
+    _snapName.clear();
+    _zxSpectrum->reset(ZxSpectrumSuperSpec);
+    _wiz.pop(true);
+  });
+#endif
 
   _resetTurboOp.toggle([=]() {
     _snapName.clear();
@@ -834,6 +870,11 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _resetPlus3Op.toggle([=]() {
     _snapName.clear();
     _zxSpectrum->reset(ZxSpectrumPlus3);
+    _wiz.pop(true);
+  });
+  _resetPlus3sOp.toggle([=]() {
+    _snapName.clear();
+    _zxSpectrum->reset(ZxSpectrumPlus3s);
     _wiz.pop(true);
   });
 #endif
@@ -966,36 +1007,62 @@ ZxSpectrumMenu::ZxSpectrumMenu(
     _chooseZx48kRom.reload();
     _wiz.push(
       &_chooseZx48kRom,
-      [=](PicoPen *pen){ pen->printAt(0, 0, false, "16K ROM images (48K)"); },
+      [&](PicoPen *pen){ pen->printAtF(0, 0, false, "16K ROM images (48K) %s",
+        zxRomLoadStage ? zxRomLoadStage : ""); },
       true);
   });
   _chooseZx48kRom.onToggle = [=](FILINFO *finfo, int32_t i, const char* path) {
+    // Persistent stage indicator (rfix4, replaces the rfix3 transient
+    // showMessage overlays): the stage label is written into the global
+    // zxRomLoadStage BEFORE the step runs and is printed in the menu header
+    // row 1 and in this explorer title on every repaint. The menu repaints
+    // continuously in VGA menu mode, so the last painted stage is still
+    // visible at a freeze - unlike the old transient overlays, which were
+    // often never repainted before the machine hung.
+    zxRomLoadStage = "ROM: open";
     if (isCustom48kRom(finfo->fsize, finfo->fname)) {
-      uint8_t *rom = _zxSpectrum->customRom(); // heap-allocates on first use
+      // Aliasing guard (diag9): the custom-ROM buffer IS _RAM pool bank 7,
+      // which on the 128K/+3/+3s machines is the SHADOW SCREEN bank (7FFD
+      // bit3) and on the HC2000 the IF1 shadow ROM. Copying an image into it
+      // while such a machine is live corrupts whatever uses bank 7 (e.g. a
+      // +3s session with 7FFD=0xFE would show the ROM bytes as the screen).
+      // Only the 48K machine can ever boot the image, so only accept the
+      // copy while it is the active machine.
+      if (_zxSpectrum->type() != ZxSpectrum48k) {
+        zxRomLoadStage = "ROM: switch to 48K first";
+        _wiz.pop(true);
+        return;
+      }
+      zxRomLoadStage = "ROM: alloc";
+      uint8_t *rom = _zxSpectrum->customRom();
       if (rom) {
+        zxRomLoadStage = "ROM: copy";
         FatFsSpiInputStream *is = new FatFsSpiInputStream(_sdCard, path);
         const int32_t n = is->read(rom, 16384);
         delete is;
         if (n == 16384) {
           _zx48kRomName = finfo->fname;
-          // Already running the 48K machine: reset immediately so the custom
-          // ROM boots. Any other active machine just keeps the buffer stored
-          // (it takes effect when the user switches to 48K).
-          if (_zxSpectrum->type() == ZxSpectrum48k) _zxSpectrum->reset(ZxSpectrum48k);
+          // Already running the 48K machine (guaranteed by the guard above):
+          // reset immediately so the custom ROM boots.
+          if (_zxSpectrum->type() == ZxSpectrum48k) {
+            zxRomLoadStage = "ROM: reset";
+            _zxSpectrum->reset(ZxSpectrum48k);
+          }
+          zxRomLoadStage = "ROM: done";
           _main.repaint();
         }
         else {
           // Short read: drop the half-loaded image again
           _zxSpectrum->customRomLoaded(false);
-          _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported ROM"); });
+          zxRomLoadStage = "ROM: short read";
         }
       }
       else {
-        _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported ROM"); });
+        zxRomLoadStage = "ROM: no buffer";
       }
     }
     else {
-      _wizUtils.showMessage([=](PicoPen *pen){ pen->clear(); pen->printAt(0,1,false,"Unsupported ROM"); });
+      zxRomLoadStage = "ROM: unsupported";
     }
     _wiz.pop(true);
   };
@@ -1014,7 +1081,12 @@ ZxSpectrumMenu::ZxSpectrumMenu(
   _hcDisk.addOption(_hcDiskAOp.addQuickKey(&_k1));
   _hcDisk.addOption(_hcDiskBOp.addQuickKey(&_k2));
   _hcDisk.addOption(_hcDiskEjectOp.addQuickKey(&_k3));
-  _hcDisk.addOption(_hcBasicDiskAOp.addQuickKey(&_k5));
+  // Disk-menu row 5 ("Mount BASIC disk A"): quick key '4' (not '5') — '5'
+  // is the SD-card REFRESH key in the file choosers (PicoExplorer ascii 0x35)
+  // and the menu header tells the user to press 5 for refresh. '4' is unused
+  // in this menu; the shared _k4 matcher only matches options of the active
+  // menu (PicoSelect::keydown), so reuse is safe.
+  _hcDisk.addOption(_hcBasicDiskAOp.addQuickKey(&_k4));
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   _hcDisk.addOption(_plus3DiskAOp.addQuickKey(&_k6));
   _hcDisk.addOption(_plus3DiskBOp.addQuickKey(&_k7));
@@ -1435,16 +1507,198 @@ _audioOutOptions.addOption(_audioHdmiOp.addQuickKey(getQuickKey(audioOutQuickKey
     _wiz.pop(true);
   };
 
-  onPaint([](PicoPen *pen) {
+  onPaint([=](PicoPen *pen) {
 #ifdef ZX_PLATFORM
      pen->printAtF(0, 0, false, "ZX Spectrum 48K/128K by fruit-bat on %s", ZX_PLATFORM);
 #else
      pen->printAt(0, 0, false, "ZX Spectrum 48K/128K by fruit-bat");
 #endif
-     pen->printAtF(0, 1, false, "Built for %s on %s",
-        PICO_MCU,
-        __DATE__
-      );
+     // diag8: live +3s hang probe on row 1. Kept OUTSIDE the
+     // ZX_VIDEO_AUTO_DETECT gate on purpose: that macro only exists in the
+     // VGA_HDMI_AUTO target (src/vgahdmi), while the +3s test machine runs
+     // the plain VGA_I2S_AUDIO build (src/vga), where the print compiled
+     // out and the binary stayed byte-identical to the pre-diag build.
+     // Repainted every frame in menu mode, so with the +3s hung the user
+     // opens the menu and reads the frozen PC and the internal states of
+     // the three paging latches (1FFD/7FFD/7F7E).
+      // diag9: " S%d" = the _RAM pool bank the VGA raster is actually reading
+      // (5 = normal screen, 7 = shadow screen; screenPtr() follows 7FFD bit3
+      // live) and " P%04X" = the low 16 bits of the first screen byte pointer
+      // (bank 5 vs bank 7 differ by 0x8000 there). With 7FFD=0xFE (bit3=1) a
+      // healthy renderer must print S7; S5 means the page logic is broken.
+      // diag11: " D7:%02X" = the $DF7E latch state (bit3 = C000->shadow
+      // override). Suspected stuck-bit3 hang after the loader EXIT failed
+      // to restore it; full line stays well under the 80-col frame.
+      if (_zxSpectrum->type() == ZxSpectrumPlus3s) {
+        pen->printAtF(0, 1, false, "s3 PC:%04X 1F:%02X 7F:%02X 7E:%02X D7:%02X S%d P%04X",
+          _zxSpectrum->dbgZ80Pc(),
+          _zxSpectrum->dbgPlus3s1ffd(),
+          _zxSpectrum->dbgPlus3s7ffd(),
+          _zxSpectrum->dbgPlus3s7f7e(),
+          _zxSpectrum->dbgPlus3sDf7e(),
+          _zxSpectrum->dbgScreenPage(),
+          _zxSpectrum->dbgScreenAddr());
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+        // diag11: last 5 +3s port events from the 256-entry write/read ring,
+        // newest first (idx-5..idx-1, oldest at the left), so the user can
+        // see further back through the IN-modify-OUT interplay between the
+        // stock ROM paging loops and the latch emulation at the hang point.
+        // '=' = OUT, '<' = IN (the IN values matter). Each entry renders as
+        // "%04X%c%02X" = 9 cols, 5 entries + separators = 49 cols with the
+        // "L:" prefix = 51 cols, clear of the 80-col frame edge. Parent rows
+        // 2-3 are taken by the always-on _devices child (Clk/Vcore + USB
+        // lines) and the wizard starts at row 6, so the ring goes on row 4.
+        // diag12: a second line "L2:" on parent row 5 (free: between the
+        // _devices child on rows 2-3 and _wiz at row 6, ZxSpectrumMenu.cpp
+        // ctor) shows the same format for idx-45..idx-41, a window 40 events
+        // further back that covers the loader's mid-sequence: the old
+        // 24-entry ring only survived ~5 events because the boot's paging
+        // writes overwrote the loader phase before the hang.
+        const auto *s3ops = _zxSpectrum->plus3sOps();
+        const uint8_t s3n = _zxSpectrum->plus3sOpIdx();
+        pen->printAtF(0, 4, false, "L:%04X%c%02X %04X%c%02X %04X%c%02X %04X%c%02X %04X%c%02X",
+          s3ops[(uint8_t)(s3n - 5) & 255].port,
+          s3ops[(uint8_t)(s3n - 5) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 5) & 255].val,
+          s3ops[(uint8_t)(s3n - 4) & 255].port,
+          s3ops[(uint8_t)(s3n - 4) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 4) & 255].val,
+          s3ops[(uint8_t)(s3n - 3) & 255].port,
+          s3ops[(uint8_t)(s3n - 3) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 3) & 255].val,
+          s3ops[(uint8_t)(s3n - 2) & 255].port,
+          s3ops[(uint8_t)(s3n - 2) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 2) & 255].val,
+          s3ops[(uint8_t)(s3n - 1) & 255].port,
+          s3ops[(uint8_t)(s3n - 1) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 1) & 255].val);
+        pen->printAtF(0, 5, false, "L2:%04X%c%02X %04X%c%02X %04X%c%02X %04X%c%02X %04X%c%02X",
+          s3ops[(uint8_t)(s3n - 45) & 255].port,
+          s3ops[(uint8_t)(s3n - 45) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 45) & 255].val,
+          s3ops[(uint8_t)(s3n - 44) & 255].port,
+          s3ops[(uint8_t)(s3n - 44) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 44) & 255].val,
+          s3ops[(uint8_t)(s3n - 43) & 255].port,
+          s3ops[(uint8_t)(s3n - 43) & 255].isRead ? '<' : '=',
+          s3ops[(uint8_t)(s3n - 43) & 255].val,
+          s3ops[(uint8_t)(s3n - 42) & 255].port,
+           s3ops[(uint8_t)(s3n - 42) & 255].isRead ? '<' : '=',
+           s3ops[(uint8_t)(s3n - 42) & 255].val,
+           s3ops[(uint8_t)(s3n - 41) & 255].port,
+           s3ops[(uint8_t)(s3n - 41) & 255].isRead ? '<' : '=',
+           s3ops[(uint8_t)(s3n - 41) & 255].val);
+        // diag13: a third line "L3:" answering the current hang question
+        // (7E reads 0x10 = shadow bit2 clear): it shows the LAST ring entry
+        // whose port == $7F7E, then the events AFTER it in chronological
+        // order. If the last 7F7E event is "=14" followed by no further
+        // 7F7E event, the loader's final OUT 7F7E,$14 landed and nothing
+        // rewrote the latch -> the 0x10 readout must come from our apply/
+        // reset path. If it shows "=10" last, or a later 7F7E "=10", his
+        // boot rewrote the latch after the loader. "=14 then: <... >" with
+        // a 7F7E IN afterwards would show a stale readback. Format keeps
+        // the L/L2 convention: '=' = OUT, '<' = IN. Placed on parent row
+        // 24: the _wiz child rect spans rows 6-23 (_explorerRows(18) x
+        // _explorerRowsPerFile(1)) and PicoWin::repaint pen->clear()s the
+        // whole child rect, so anything on rows 6-23 would be erased; row
+        // 24 is the first clear row above the row-29 footer. Scans all 256
+        // ring slots newest-first (zero-init slots have port=0, so a
+        // not-yet-filled ring can never false-match $7F7E).
+        uint8_t s3off7e = 0;      // depth of the newest 7F7E entry: 0 = it IS the newest event, 255 = oldest slot
+        bool s3found7e = false;
+        for (uint16_t j = 0; j < 256; ++j) {
+          if (s3ops[(uint8_t)(s3n - 1 - j) & 255].port == 0x7F7E) {
+            s3off7e = (uint8_t)j; s3found7e = true; break;
+          }
+        }
+        if (s3found7e) {
+          const uint8_t p7 = (uint8_t)(s3n - 1 - s3off7e) & 255;
+          pen->printAtF(0, 24, false, "L3:7F7E%c%02X then:",
+            s3ops[p7].isRead ? '<' : '=', s3ops[p7].val);
+          int32_t s3c = 16;
+          // up to 4 events after it (fewer if it is the newest event)
+          for (uint8_t k = 1; k <= 4 && k <= s3off7e; ++k) {
+            const auto &s3e = s3ops[(uint8_t)(p7 + k) & 255];
+            pen->printAtF(s3c, 24, false, " %04X%c%02X",
+              s3e.port, s3e.isRead ? '<' : '=', s3e.val);
+            s3c += 8;
+          }
+        }
+        else {
+          pen->printAt(0, 24, false, "L3:none");
+        }
+#endif
+      }
+      // fix5: live SuperSpec CF diag on row 1, same slot as the +3s line
+      // above: the registers latched by the last CF command, the current
+      // STATUS, and the sector counters. While the CF image file is missing
+      // the row shows the one-time blank-image creation progress instead -
+      // on a slow SPI SD card that 16 MB write is the multi-second (up to
+      // multi-minute) stall that used to look like a dead machine. The line
+      // repaints every menu frame, so with the DOS stuck the user opens the
+      // menu and reads where the CF state machine is: ST=58 with a frozen
+      // LBA/W counter = mid-transfer stall; the same values unchanged across
+      // frames = the DOS is polling our STATUS register.
+      else if (_zxSpectrum->type() == ZxSpectrumSuperSpec) {
+        ZxSpectrumCf::CfDiag d;
+        if (_zxSpectrum->cfDiag(&d)) {
+          if (d.imgMaking) {
+            pen->printAtF(0, 1, false, "CF: blank image %lu/%lu KB",
+              (unsigned long)(d.imgDone >> 10),
+              (unsigned long)(ZxSpectrumCf::BLANK_IMAGE_BYTES >> 10));
+          }
+          else {
+            pen->printAtF(0, 1, false, "CF: LBA%06lX C%02X ST%02X CMD%02X W%lu R%lu E%lu FT%lu",
+              (unsigned long)d.lba, (unsigned)d.count, (unsigned)d.status,
+              (unsigned)d.cmd, (unsigned long)d.nWr, (unsigned long)d.nRd,
+              (unsigned long)d.nErr, (unsigned long)d.nUwt);
+          }
+        }
+        else {
+          pen->printAt(0, 1, false, "CF: not attached");
+        }
+      }
+      else {
+#ifdef ZX_VIDEO_AUTO_DETECT
+       // One-line report of the boot-time VGA/HDMI auto-detect decision.
+       // The raw pin read is no longer printed (rule hardware-validated);
+       // the zxVideoAutoDetectPinsRaw global stays exported in
+       // VideoAutoDetect for future debugging.
+       pen->printAtF(0, 1, false, "Built for %s | Video: %s",
+          PICO_MCU, zxVideoAutoDetectName());
+#else
+       pen->printAtF(0, 1, false, "Built for %s on %s",
+          PICO_MCU,
+          __DATE__
+        );
+#endif
+     }
+
+     // Persistent ROM-load stage (rfix4): printed in the row-1 area, right
+     // of the "Built for ..." report, so the last loader step stays
+     // visible across repaints until the next ROM load replaces it.
+     if (zxRomLoadStage) pen->printAt(40, 1, false, zxRomLoadStage);
+
+#ifdef NESPAD_ENABLE
+     // Live joystick probe (release feature): while the main menu has the
+     // Joystick option focused (row 7, option index 6, see the addOption
+     // order below), row 1 shows the raw joystick bytes sampled on every
+     // menu repaint: K = merged Kempston byte (HID | NES pad), N = NES pad
+     // bits, H = HID joystick bits. Printed at col 57, clear of the ROM
+     // stage text (max col 56) and within the 80-col frame. NES pad input
+     // (open-drain DATA, pull-ups in the nespad driver) is hardware-
+     // validated on MURMULATOR2 via an ESP32 NES-protocol adapter: it works
+     // both in this menu and in gameplay.
+      if (_main.focus() == 6) {
+        ZxSpectrumJoystick *joy = _zxSpectrum->joystick();
+        ZxSpectrumDualJoystick *dj =
+          (ZxSpectrumDualJoystick *)joy; // NESPAD_ENABLE builds use the dual joystick
+        uint8_t k = joy ? joy->kempston() : 0;
+        uint8_t n = dj ? dj->joy1R() : 0;
+        uint8_t h = dj ? dj->joy1L() : 0;
+        pen->printAtF(57, 1, false, "J:K%02X N%02X H%02X", k, n, h);
+      }
+#endif
 
      pen->printAt(0, SZ_FRAME_ROWS-1, false, "F1 to exit menu");
      pen->printAt(SZ_FRAME_COLS-14, SZ_FRAME_ROWS-1, false, "ESC to go back");
@@ -1569,6 +1823,9 @@ void ZxSpectrumMenu::initialise() {
   // Custom 48K ROM images folder (main menu option R): auto-created like
   // the disks/HC88 folders below.
   _pathRoms.createFolders(_sdCard);
+  // ZX48 SuperSpec CF images folder (phase 2): auto-created like the disks/
+  // folders, same pattern as the HC88 disks dir.
+  _pathCf.createFolders(_sdCard);
   _pathDisks.createFolders(_sdCard);
   _pathDisksHc2000.createFolders(_sdCard);
   _pathDisksBasic.createFolders(_sdCard);

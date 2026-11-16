@@ -42,6 +42,9 @@ private:
   // Custom 48K ROM images (main menu option R), folder zxspectrum/roms
   // (auto-created at menu init)
   FatFsFilePath _pathRoms;
+  // Raw CompactFlash image folder for the ZX48 SuperSpec (phase 2): the
+  // machine's own CF in memory mode, backed by zxspectrum/cf/SUPERSPEC.CF.
+  FatFsFilePath _pathCf;
   FatFsFilePath _pathDisks;
   FatFsFilePath _pathCobraDisks;
   FatFsFilePath _pathDisksHc2000;
@@ -54,6 +57,7 @@ private:
   ZxSpectrumSettings *_zxSpectrumSettings;
   InputStream* _tis;
 
+  PicoQuickKeyAscii _k0;
   PicoQuickKeyAscii _k1;
   PicoQuickKeyAscii _k2;
   PicoQuickKeyAscii _k3;
@@ -76,6 +80,11 @@ private:
   // Main menu option R: custom 48K ZX Spectrum ROM loader. No other quick
   // key in this file uses 'R'.
   PicoQuickKeyAscii _kR;
+#if PICO_RP2350
+  // Reset menu (row 11): ZX48 SuperSpec. Digits 0-9 and the letters above
+  // are taken; 'E' is free in the reset submenu.
+  PicoQuickKeyAscii _kE;
+#endif
 
   PicoWiz _wiz;
   PicoWizUtils _wizUtils;
@@ -205,8 +214,15 @@ private:
   // ICE Felix HC88 reset entry (phase 1: no FDC, no hires)
   PicoOptionText _resetHc88Op;
   PicoOptionText _resetCubzOp;
+#if PICO_RP2350
+  // ZX48 SuperSpec (machine #11): R. Koenig's modified ZX Spectrum,
+  // supr190712 ROM, RP2350 only
+  PicoOptionText _resetSuperSpecOp;
+#endif
 #ifdef ZX_PLUS3_ROM_AVAILABLE
   PicoOptionText _resetPlus3Op;
+  // ZX Spectrum +3s (machine #10): Cristian Secară's +3 with his ROMs
+  PicoOptionText _resetPlus3sOp;
 #endif
 
   // CoBra 1: disk drives A:-D: on the floppy interface, mainboard jumpers

@@ -33,6 +33,11 @@ bool __not_in_flash_func(i2s_audio_ready)()
 #include "hardware/clocks.h"
 #include "ZxSpectrumAudioVol.h"
 #include "ZxSpectrumAudio16BitStereo.h"
+#ifdef ZX_AUDIO_DVI_MIRROR
+// Mirror every I2S stereo sample into the DVI (HDMI) audio ring as well.
+// No-op unless the DVI video pipeline is running (guarded inside).
+#include "ZxSpectrumAudioHdmi.h"
+#endif
 
 #ifndef PICO_I2S_AUDIO_FREQ
 #define PICO_I2S_AUDIO_FREQ 44100
@@ -104,6 +109,13 @@ void __not_in_flash_func(i2s_audio_handler)(uint32_t vA, uint32_t vB, uint32_t v
   {
     is2_audio_put((ll << 16) | rr);
   }
+
+#ifdef ZX_AUDIO_DVI_MIRROR
+  // Feed the same sample stream into the DVI (HDMI) audio ring when the
+  // HDMI/DVI video output is active (hdmi_audio_handler checks dvi_running
+  // and does nothing otherwise).
+  hdmi_audio_handler(vA, vB, vC, s, buzzer, mute);
+#endif
 }
 
 bool __not_in_flash_func(i2s_audio_ready)()

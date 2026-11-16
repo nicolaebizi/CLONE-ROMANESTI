@@ -11,11 +11,15 @@
 // TIM-S Plus boot-only (RP2350 only): 2 KiB boot EPROM mirrored x8 into the
 // 16K low bank.
 #include "tims_boot_rom.h"
+// ZX48 SuperSpec (machine #11, RP2350 only): 64K EPROM = 4 x 16K banks
+// (224 DOS+menu, 225/226 extended BASIC, 227 original ROM + patches).
+#include "supr_rom.h"
 #endif
 // HC88 phase 1: the 16K motherboard ROM dump.
 #include "hc88_rom.h"
 #ifdef ZX_PLUS3_ROM_AVAILABLE
 #include "plus3_roms.h"
+#include "plus3s_rom.h"
 #endif
 
 #include <string.h>
@@ -86,6 +90,13 @@ static void loadIf1V2(uint8_t *destination) {
 // (a few milliseconds).  Until then the 8255 is held in reset and PO is
 // preset; the boot ROM waits with its DELAY loop (~49ms) before using it.
 #define COBRA_POR_TSTATES (5 * 3500)
+
+// ZX48K custom-ROM loader diag export (menu row-1 line): the loader writes
+// its current step label here BEFORE the step runs (open/alloc/copy/reset/
+// done). Unlike the old transient showMessage overlays, this label persists
+// across repaints, so the last painted stage is still on screen if the
+// machine freezes mid-load. NULL until the first ROM load.
+const char* zxRomLoadStage = 0;
 
 ZxSpectrum::ZxSpectrum(
     ZxSpectrumKeyboard *keyboard1,
@@ -171,6 +182,13 @@ void ZxSpectrum::setAudioDriver(zx_spectrum_audio_driver_t* audio_driver) {
 
 void ZxSpectrum::transmute(ZxSpectrumType type) {
   _type = type;
+  // Custom 48K ROM (bank 7 of _RAM) is invalid outside the 48K machine: the
+  // 128K/+3 machines page bank 7 into Q3 (port $7FFD) and HC2000 keeps its
+  // IF1 shadow in _RAM[7]. Invalidate the image (pointer only, the bank is
+  // zeroed by the reset() that follows) so it cannot be clobbered while it
+  // would still be needed - a custom ROM must be re-selected after switching
+  // back to the 48K machine.
+  if (type != ZxSpectrum48k) customRomLoaded(false);
   if (type == ZxSpectrumCobra) {
     _Z80.fetch_opcode = cobraFetchOpcode;
     _Z80.reti = cobraReti;
@@ -230,12 +248,29 @@ void ZxSpectrum::transmute(ZxSpectrumType type) {
       _hc88Latch = 0;
       _hc88If1Paged = false;
       break;
+#if PICO_RP2350
+    case ZxSpectrumSuperSpec:
+      // ZX48 SuperSpec power-on state (STUDIU_EMULARE_ROELOF.md §2/§4): the
+      // GAL latches come up cleared by /RESET -> EPROM bank 224 (DOS +
+      // coldstart menu) active at $0000-$3FFF, RAMSEL = normal 48K RAM,
+      // MEMLOCK released, epromwe flip-flop disarmed. The reset path calls
+      // applySuperSpecMap() after the pool zeroing.
+      setPageaddr(0, (uint8_t*)supr_rom); // bank 224 for the interim map
+      _portMem = 0x20; // no $7FFD on this machine: keeps screenPtr() on _RAM[5]
+      _ssEpBank = 0;
+      _ssRamsel = false;
+      _ssMemlock = false;
+      _ssWeArmed = false;
+      break;
+#endif
     case ZxSpectrum128k:
     case ZxSpectrumPlus3:
+    case ZxSpectrumPlus3s:
     default:
       setPageaddr(0, (uint8_t*)zx_128k_rom_1);
       _portMem = 0;
       _plus3Latch1ffd = 0;
+      _plus3sLatch[0] = _plus3sLatch[1] = _plus3sLatch[2] = _plus3sLatch[3] = 0;
       break;
   }
 }
@@ -385,6 +420,26 @@ void ZxSpectrum::applyHc88Map() {
   }
 }
 
+// ZX48 SuperSpec memory map (GAL SUPERSPEC.PLD + STUDIU_EMULARE_ROELOF.md
+// §2/§3, called on every latch change and after reset):
+//   $0000-$3FFF: EPROM bank window - 4 x 16K banks of supr_rom (27C512:
+//   epA16 unwired, so the 3-bit latch is masked to & 3 -> banks 224-227;
+//   IN 228..231 alias). Bank 224 = DOS + coldstart menu (power-on state).
+//   $4000-$7FFF: fixed RAM (screen bank 5).
+//   $8000-$FFFF: 32K RAM swapped by the RAMSEL latch: 0 = the normal 48K
+//   banks 2 + 0, 1 = the extra 32K bank (ssExtra() = the TIM-S pool's banks
+//   8-9, out of BSS; DOS sys-vars at $C022 = _timsRAM[9][0x22]).
+// The raster always shows the standard screen at $4000 (screenPtr default
+// path returns _RAM[5]; _portMem stays 0x20 - no $7FFD on this machine).
+#if PICO_RP2350
+void ZxSpectrum::applySuperSpecMap() {
+  setPageaddr(0, (uint8_t*)(supr_rom + (_ssEpBank & 3) * 0x4000));
+  setPageaddr(1, (uint8_t*)&_RAM[5]);
+  setPageaddr(2, _ssRamsel ? ssExtra() : (uint8_t*)&_RAM[2]);
+  setPageaddr(3, _ssRamsel ? ssExtra() + 0x4000 : (uint8_t*)&_RAM[0]);
+}
+#endif
+
 void ZxSpectrum::reset(ZxSpectrumType type)
 {
   _type = type;
@@ -399,7 +454,7 @@ void ZxSpectrum::reset(ZxSpectrumType type)
   transmute(type);
   // HC2000: reset the i8272 controller state (mounted media is kept)
   _hcFdc.softReset();
-  _hcFdc.setPlus3Mode(type == ZxSpectrumPlus3);
+  _hcFdc.setPlus3Mode(type == ZxSpectrumPlus3 || type == ZxSpectrumPlus3s);
 #if PICO_RP2350
   // TIM-S Plus: FDC soft reset (drive A/B media stays mounted across resets,
   // like HC2000); the motor line off follows the reset $1FFD = 0.
@@ -414,13 +469,34 @@ void ZxSpectrum::reset(ZxSpectrumType type)
   setPageaddr(3, (uint8_t*)&_RAM[0]);
   _ear = false;
   _pulseChain.reset();
-  memset(_RAM, 0, sizeof(_RAM));
+  if (_type == ZxSpectrum48k && _customRom) {
+    // Custom-ROM bank fix: bank 7 holds the live custom ROM image and the
+    // 48K machine never pages it in (Q0=ROM/custom, Q1=_RAM[5] screen,
+    // Q2=_RAM[2], Q3=_RAM[0]); keep it across the pool zeroing so a
+    // reload-less "Reset 48K" keeps booting the same custom ROM. Every
+    // other bank is zeroed as usual.
+    for (uint32_t b = 0; b < 8; ++b)
+      if (b != CustomRomBank) memset(_RAM[b], 0, 1 << 14);
+  }
+  else {
+    memset(_RAM, 0, sizeof(_RAM));
+  }
 #if PICO_RP2350
   // TIM S Plus: zero the 12 system banks and the video RAM on reset so the
   // boot ROM executes against a deterministic machine state.
   if (type == ZxSpectrumTimsPlus) {
     memset(_timsRAM, 0, sizeof(_timsRAM));
     memset(_timsVram, 0, sizeof(_timsVram));
+  }
+  // +3s (phase 2a): zero the shadow-RAM banks (NEWEPR loader target), stored
+  // in the TIM-S pool's banks 8-11 (machine-exclusive pools - the TIM machine
+  // zeroes the whole pool on its own reset, so no state bleeds across machine
+  // switches either way). Banks 8-9 additionally host SuperSpec's extra 32K
+  // RAM (ssExtra(), BSS fix): again machine-exclusive, each machine zeroes
+  // its own range on reset and the +3s re-copies the shadow pages from
+  // NEWEPR.GEN on its own boot.
+  if (type == ZxSpectrumPlus3s) {
+    memset(&_timsRAM[8], 0, 4 * (1 << 14));
   }
 #endif
   // HC88: the shared base _RAM pool (including the HC88 main RAM in its
@@ -430,6 +506,20 @@ void ZxSpectrum::reset(ZxSpectrumType type)
   if (type == ZxSpectrumHc88) {
     memset(_hc88Vram, 0, sizeof(_hc88Vram));
   }
+#if PICO_RP2350
+  // ZX48 SuperSpec: zero the extra 32K RAM bank (the 4164 pair Koenig added,
+  // stored in the TIM-S pool's banks 8-9 - shared with the +3s shadow slots
+  // 0-1, see ssExtra()) so the DOS bank executes against a deterministic
+  // state. Machine-exclusive pools: the +3s re-copies its shadow pages from
+  // NEWEPR.GEN on its own boot, and TIM zeroes the whole pool on its reset,
+  // so this zeroing cannot corrupt another machine's live state.
+  if (type == ZxSpectrumSuperSpec) {
+    memset(&_timsRAM[8], 0, 2 * (1 << 14));
+    // Phase 2: CF register state cleared; the image file handle is released
+    // so a SUPERSPEC.CF copied to the SD after boot is picked up here.
+    if (_ssCf) _ssCf->reset();
+  }
+#endif
   // HC2000: the Interface I shadow page gets the patched v2 ROM
   if (type == ZxSpectrumHc2000) loadIf1V2((uint8_t*)&_RAM[7]);
   // Turbo Spectrum: F5 config and its effective mapping reset to EEPROM mode
@@ -438,8 +528,10 @@ void ZxSpectrum::reset(ZxSpectrumType type)
   if (type == ZxSpectrumTurbo) applyTurboMap(); // EEPROM mode after RST
   else if (type == ZxSpectrumHc2000) applyHc2000Map(); // ROM half 0 after RST
   else if (type == ZxSpectrumPlus3) applyPlus3Map(); // Plus3 mode
+  else if (type == ZxSpectrumPlus3s) applyPlus3sMap(); // Plus3s mode (own ROMs)
 #if PICO_RP2350
   else if (type == ZxSpectrumTimsPlus) applyTimsMap(); // boot map after RST
+  else if (type == ZxSpectrumSuperSpec) applySuperSpecMap(); // bank 224 + normal RAM after RST
 #endif
   else if (type == ZxSpectrumHc88) applyHc88Map(); // reset map: ROM at Q0, VRAM at Q1 (latch 0)
   _port254 = 0x20;  //0x30;
@@ -1468,6 +1560,96 @@ void ZxSpectrum::applyPlus3Map() {
   }
 #else
   // Without ROM assets this code path is not exposed by the reset menu.
+  setPageaddr(0, (uint8_t*)zx_128k_rom_1);
+  setPageaddr(1, (uint8_t*)&_RAM[5]);
+  setPageaddr(2, (uint8_t*)&_RAM[2]);
+  setPageaddr(3, (uint8_t*)&_RAM[_portMem & 7]);
+#endif
+}
+
+// ZX Spectrum +3s: identical paging scheme to the plain +3 (ports $1FFD and
+// $7FFD), but the four ROM pages come from the +3s ROM set (NEWEPR0-3).
+//
+// Phase 2a (NEWEPR.GEN semantics, cs port tables): the 4x16K shadow-RAM
+// pages for Cristian Secară's NEWEPR loader, stored in the TIM-S pool's
+// spare banks 8-11 (page index n = pool bank 8+n; the "12-15" numbering used
+// elsewhere is only our internal label).
+//
+// $7F7E bits0-3 (one-hot; bit n set): ROM SOCKET n is replaced by shadow
+// pool bank 8+n (internal label 12+n) - only in normal paging mode ($1FFD
+// bit0 clear; in +3 special mode the slot is banked RAM with no ROM to
+// replace). The bit applies when that socket is the one currently paged at
+// $0000 (rom = (1FFD&4)?2:0 | 7FFD bit4), e.g. 7F7E=$14 (bit2) serves pool
+// bank 10 = internal page 14 (the +3DOS image copied by EPR2) whenever the
+// system pages ROM2, while ROM0/1/3 keep the stock NEWEPR ROMs. Writes into
+// the shadowed window are gated by $7F7E bit4 (writeByte mirrors this
+// condition exactly).
+//
+// $DF7E bit3: the $C000-$FFFF slot selects the shadow banks instead of the
+// regular 128K bank - pool bank = 8 + ($7FFD & 3), the same index the $7F7E
+// one-hot uses, so DF7E and 7F7E are mutually consistent (e.g. the loader's
+// MMNMI entry copies with bank 0 and the NMI re-enters it via 7F7E bit0 -
+// both land in bank 8). This is exactly what NEWEPR.GEN does: EPR0-3 copy
+// $8000->$C000 with bank 4-7 (banks 8-11) and MMNMI with bank 0 (bank 8),
+// after setting DF7E bit3. The bit takes precedence over both the normal
+// bank select and the special row select at $C000, and applies in either
+// paging mode.
+//
+// The four 16K shadow pages physically live in the RP2350-only TIM-S pool's
+// spare banks 8-11: the pools are machine-exclusive (TIM uses pages 0-11 +
+// the separate VRAM; the +3s uses _RAM banks 0-7 + the shadow), and each
+// machine zeroes its own area on reset, so no state can bleed across a
+// machine switch. RP2040 builds keep the phase 1 behaviour (the latches
+// never act on the map).
+void ZxSpectrum::applyPlus3sMap() {
+#ifdef ZX_PLUS3_ROM_AVAILABLE
+  if (_plus3Latch1ffd & 1) {
+    static const uint8_t allRam[4][4] = {
+      {0, 1, 2, 3}, {4, 5, 6, 7}, {4, 5, 6, 3}, {4, 7, 6, 3}
+    };
+    const uint8_t *banks = allRam[(_plus3Latch1ffd >> 1) & 3];
+    for (uint8_t page = 0; page < 4; page++)
+      setPageaddr(page, (uint8_t*)&_RAM[banks[page]]);
+  } else {
+    const uint8_t rom = (uint8_t)(((_plus3Latch1ffd & 4) ? 2 : 0) | ((_portMem >> 4) & 1));
+    static const uint8_t *const roms[4] = {
+      plus3s_0_rom, plus3s_1_rom, plus3s_2_rom, plus3s_3_rom
+    };
+#if PICO_RP2350
+    // Phase 2a fix (boot hang): one-hot bit n selects ROM SOCKET n for
+    // replacement by shadow pool bank 8+n - not "any bit replaces the
+    // currently paged ROM". Decoded from the NEWEPR.GEN source (EPR0-3 copy
+    // the ROM images into shadow banks 8+(7FFD&3) = banks 8-11, i.e. one
+    // shadow page per ROM slot). With 7F7E=$14 (bit4 + bit2) the loader's
+    // own RESET (OUT 1FFD,#10, OUT 7FFD,#00, JP 0) leaves ROM0 selected and
+    // bit0 clear, so the boot must execute the STOCK 48K ROM at $0000; only
+    // when the +3 system pages in ROM2 (1FFD bit2) is slot 2 replaced by
+    // bank 10 = internal page 14 (the copied +3DOS image). Replacing page 0
+    // unconditionally executed the raw +3DOS image at JP 0 (8x NOP then the
+    // "PLUS3DOS" identity bytes as code) and hung the machine with a white
+    // border. Opcode fetches share this page table (memaddr()), so the
+    // mapping applies to fetches as well.
+    if (_plus3sLatch[0] & 0x0F) {
+      if ((_plus3sLatch[0] >> rom) & 1)
+        setPageaddr(0, (uint8_t*)&_timsRAM[8 + rom]);
+      else
+        setPageaddr(0, (uint8_t*)roms[rom]);
+    }
+    else
+#endif
+    {
+      setPageaddr(0, (uint8_t*)roms[rom]);
+    }
+    setPageaddr(1, (uint8_t*)&_RAM[5]);
+    setPageaddr(2, (uint8_t*)&_RAM[2]);
+    setPageaddr(3, (uint8_t*)&_RAM[_portMem & 7]);
+  }
+#if PICO_RP2350
+  if (_plus3sLatch[2] & 0x08)
+    setPageaddr(3, (uint8_t*)&_timsRAM[8 + (_portMem & 3)]);
+#endif
+#else
+  // Without the ROM assets this machine type is not exposed by the menu.
   setPageaddr(0, (uint8_t*)zx_128k_rom_1);
   setPageaddr(1, (uint8_t*)&_RAM[5]);
   setPageaddr(2, (uint8_t*)&_RAM[2]);

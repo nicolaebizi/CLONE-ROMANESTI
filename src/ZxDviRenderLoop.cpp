@@ -104,6 +104,16 @@ void __not_in_flash_func(ZxDviRenderLoop)(
           ys += rs;
         }
       }
+      else if (zxSpectrum.cobra80Char()) {
+        zx_prepare_hdmi_scanline_cobra80(
+          &dvi0,
+          y,
+          frames,
+          zxSpectrum.cobraVram(),
+          zxSpectrum.borderColour(y)
+        );
+        y++;
+      }
       else {
         zx_prepare_hdmi_scanline(
           &dvi0, 
