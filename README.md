@@ -1,3 +1,6 @@
+# PROIECT DEZVOLTAT DIN FRUIT-BATH SI COMPLECTAT CU CLONE ROMANESTI
+
+
 # pico-zxspectrum
 48k/128k ZX Spectrum for Raspberry Pico Pi RP2040
 
