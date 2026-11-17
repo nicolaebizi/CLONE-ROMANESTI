@@ -250,6 +250,53 @@ void __not_in_flash_func(zx_prepare_hdmi_scanline_cobra80)(
 // LUT had put the index in bit 2 - every pixel read back as colour 0 and the
 // screen encoded all black (the "few red stripes" were libdvi's solid-red
 // late-scanline error lines, not a plane swap).
+// Encoded with a DEDICATED LUT encoder (CUBZFAST): the generic path
+// (pixbuf expansion + tmds_encode_palette_data) runs at ~46 us/line at the
+// 252 MHz scanline clock - at the deadline - so the SD/disk cycle theft
+// during CP/M disk storms made libdvi emit its solid-red late-scanline
+// error lines (the red flashes during DIR).  With the fixed-parity
+// convention libdvi itself ships for fullres without DC-balance feedback
+// (tmds_encode.S, TMDS_FULLRES_NO_DC_BALANCE: even pixel stream always the
+// negative variant, odd stream always the positive - aggregate per-line DC
+// exactly balanced), the encode becomes static: the blue/red planes are
+// ONE constant word (both palette colours carry byte 0x00 on those
+// channels), the green margins are the same word, and the green content is
+// a precomputed VRAM-byte -> 4 TMDS words table (4 KB) built once at init
+// from the real palette symbol table (tmds_setup_palette24_symbols).  Per
+// line: ~960 word stores, ~10 us at 252 MHz (~4x under the old encode),
+// so the deadline is met with a large margin during disk activity.
+//
+// Word-level identity with the generic path is impossible by construction
+// (its DC-balance variant choice depends on the running accumulator, hence
+// on the content); the two variants of a symbol DECODE to the same byte,
+// and the host test cross-checks the fast path against the generic path on
+// random patterns at the level that matters: identical DECODED pixels on
+// all 3 planes, every fast symbol a genuine palette variant.
+//
+// The generic path is kept as a fallback (selected once at init).
+//
+// The previous revision was broken two ways: it translated the colour through
+// attr_to_colour_chan_X[0xC0], but $C0 (bright green ink on black paper) maps
+// to the all-black palette entry there (black drawn on black), and it selected
+// the words of palettised_2bpp_tables, which carry the same colour on both
+// pixels of a word (pixel doubling), so single-pixel patterns garbled.  It
+// also used 32-pixel margins, leaving the tail of the scanline buffer
+// unwritten on every line.
+//
+// The revision on top of that had the plane layout right - blue at word 0,
+// green at words_per_channel, red at 2 * words_per_channel, exactly the
+// three DMA planes libdvi serves (dvi_timing.c reads lane i from tmdsbuf +
+// i * h_active_pixels / DVI_SYMBOLS_PER_WORD; lane 0 is blue - TMDS_SYNC_LANE,
+// the "solid red scanline" error pattern is B/G 0x00 + R 0xfc - and the
+// proven zx encoders index attr_to_colour_chan_B/G/R for planes 0/1/2) - and
+// the palette24 argument order right (blue = bits 0-7, green = bits 8-15,
+// red = bits 16-23 of the 24-bit value, per tmds_setup_palette24_symbols).
+// What it got wrong was the pixbuf byte format: the palette loop's interp
+// lane 0 mask keeps its masked bits in place, so with palette_bits = 1 the
+// hardware extracts bit 0 of each pixbuf byte as the colour index, while the
+// LUT had put the index in bit 2 - every pixel read back as colour 0 and the
+// screen encoded all black (the "few red stripes" were libdvi's solid-red
+// late-scanline error lines, not a plane swap).
 void __not_in_flash_func(zx_prepare_hdmi_scanline_cubz)(
   struct dvi_inst *dvi,
   uint32_t y,
@@ -259,15 +306,20 @@ void __not_in_flash_func(zx_prepare_hdmi_scanline_cubz)(
   // 2-entry 24-bit palette translated to TMDS symbols: per channel 4 words
   // (colour 0 negative/positive disparity, colour 1 negative/positive).
   static uint32_t cubz_palette[12];
-  // VRAM byte -> 8 packed pixel bytes (2 words), palette index in bit 0
-  // (the LSB - what the palette loop's interp lane 0 mask extracts for
-  // palette_bits = 1), MSB = leftmost pixel (same bit order as the VGA
-  // encoder).
+  // VRAM byte -> 2 packed pixel words each, palette index in bit 0: the
+  // generic-path pixbuf expansion (fallback path).
   static uint32_t cubz_lut[ZX_CUBZ_TMDS_LUT_WORDS];
-  // One palette-index byte per pixel, word aligned.  The black margins are
-  // set once and never touched.
+  // One palette-index byte per pixel, word aligned (fallback path).  The
+  // black margins are set once and never touched.
   static uint32_t cubz_linepix[ZX_CUBZ_TMDS_LINE_WORDS];
-  static uint32_t cubz_margin_words;  // margin size in words (per side)
+  // FAST path: VRAM byte -> 4 green-plane TMDS words per entry (4 KB),
+  // derived once from the real palette symbol table.
+  static uint32_t cubz_fast_lut[ZX_CUBZ_TMDS_FAST_LUT_WORDS];
+  static zx_cubz_tmds_fast_t cubz_fast;
+  static uint32_t cubz_margin_words;  // pixbuf-domain margin (fallback)
+  static uint32_t cubz_tmds_margin;   // TMDS-domain margin (fast path)
+  static uint32_t cubz_nw;            // h_active_pixels / 2 (fast path)
+  static bool cubz_fast_ok = false;
   static bool cubz_ready = false;
 
   if (!cubz_ready) {
@@ -283,6 +335,16 @@ void __not_in_flash_func(zx_prepare_hdmi_scanline_cubz)(
     memset(cubz_linepix, 0, sizeof(cubz_linepix));
     cubz_margin_words =
       (dvi->timing->h_active_pixels - 512) >> 3;  // (margin px per side) / 4
+    cubz_tmds_margin =
+      (dvi->timing->h_active_pixels - 512) >> 2;  // (margin px per side) / 2
+    cubz_nw = dvi->timing->h_active_pixels >> 1;
+    // The fast path needs room for the 512 screen pixels between the
+    // margins (word counts, 2 px per word).
+    cubz_fast_ok = cubz_nw >= cubz_tmds_margin + ZX_CUBZ_TMDS_SCREEN_BYTES * 4;
+    // Derive the 4 KB LUT + the constant plane word from the real palette
+    // symbol table (the palette encode's own symbol generator).
+    zx_cubz_tmds_build_fast_lut(cubz_fast_lut, &cubz_fast.plane_word, cubz_palette);
+    cubz_fast.lut = cubz_fast_lut;
     cubz_ready = true;
   }
 
@@ -297,14 +359,17 @@ void __not_in_flash_func(zx_prepare_hdmi_scanline_cubz)(
 #endif
   const uint8_t *s = vram + ((cubz_lines[y < 240 ? y : 239] + scroll) & 255);
 
-  // Refill only the 512 screen pixels (64 VRAM bytes, byte-per-8-px stride,
-  // identical indexing to the VGA encoder); margins stay colour 0.
-  zx_cubz_tmds_fill_line(cubz_linepix, cubz_margin_words, cubz_lut, s);
-  // One 10-bit TMDS symbol per pixel per channel: width/2 words per plane,
-  // planes in order blue, green, red - exactly the full scanline buffer.
-  tmds_encode_palette_data(
-    cubz_linepix, cubz_palette, tmdsbuf, dvi->timing->h_active_pixels, 1
-  );
+  if (cubz_fast_ok) {
+    // FAST: direct LUT encode, full 3-plane TMDS buffer, no pixbuf.
+    zx_cubz_tmds_fill_line_fast(tmdsbuf, cubz_nw, cubz_tmds_margin, &cubz_fast, s);
+  }
+  else {
+    // Fallback: the proven generic palette path (unchanged).
+    zx_cubz_tmds_fill_line(cubz_linepix, cubz_margin_words, cubz_lut, s);
+    tmds_encode_palette_data(
+      cubz_linepix, cubz_palette, tmdsbuf, dvi->timing->h_active_pixels, 1
+    );
+  }
 
   queue_add_blocking(&dvi->q_tmds_valid, &tmdsbuf);
 }

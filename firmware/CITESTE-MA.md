@@ -1,19 +1,28 @@
 # Firmware fruit-bat (pico-zxspectrum): CoBra 1, TIM-S Plus și ce s-a modificat
 
-Data compilării: 17 noiembrie 2026 (versiunea 4: corecție CUB-Z pe ieșirea HDMI).
+Data compilării: 17 noiembrie 2026 (versiunea 5: CUB-Z pe HDMI cu encoder dedicat rapid).
 
-## 1a. Fișierele UF2 HDMI — corecția CUBZFIX (verdele pe canalul G, nu roșu)
+## 1a. Fișierele UF2 HDMI — corecția CUBZFIX (verdele pe canalul G + encoder dedicat rapid)
 
-Compilație din 17 noiembrie 2026, build `_build_cubzhdmi3_20261116`, pico2 / RP2350.
-Corectează CUB-Z pe HDMI: indexul paletei 1bpp se scria în bitul 2 al fiecărui
-octet de pixel, dar calea de codare libdvi îl citește din bitul 0 — tot ecranul
-ieșea negru, cu dungi roșii (liniile întârziate ale libdvi). Planurile B/G/R
-erau deja corecte (B la cuvintele 0-319, G la 320-639, R la 640-959).
+Compilație din 17 noiembrie 2026, build `_build_cubzfast_20261117`, pico2 / RP2350.
+Include corecția CUBZFIX anterioară (verdele pe canalul G) PLUS encoderul dedicat
+rapid pentru CUB-Z: codarea generică libdvi rula ~46 µs/linie (la limita termenului
+de ~32 µs/linie la 252 MHz), astfel că activitatea pe disc (CP/M DIR) fură cicluri
+și libdvi emitea liniile-eroare roșii. Acum: LUT dedicat de 4 KB (256 octeți VRAM →
+4 cuvinte TMDS pe planul verde, derivat la pornire din tabela reală de simboluri),
+planurile B/R = un cuvânt constant, marginile verzi = același cuvânt; ~10 µs/linie
+(~4× mai repede, termenul este respectat cu marjă mare). Convenția DC-balance este
+cea din libdvi (`TMDS_FULLRES_NO_DC_BALANCE`: pixelii pari = variantă negativă,
+impari = pozitivă, DC agregat pe linie exact echilibrat) — variantele decodează
+identic pe ecran. Testul host (`test/host/test_cubz_tmds.cpp`, 22/22 PASS) compară
+calea rapidă cu cea generică pe 404 linii aleatorii (ambele timing-uri): pixeli
+decodezați identici pe toate cele 3 planuri, fiecare simbol o variantă validă de
+paletă. BSS +4112 B (staticele CUB-Z ≈ 2,8 KB → 6,9 KB).
 
 | Fișier | Placă | Pico | SHA-256 (primele 12) |
 |---|---|---|---|
-| `MURMULATOR1_PICO2_HDMI_CUBZFIX_640x480.uf2` | Murmulator 1 (HDMI, I2S) | Pico 2 (RP2350) | `e90bb4b42140` |
-| `MURMULATOR2_PICO2_HDMI_AUTO_CUBZFIX_640x480.uf2` | Murmulator 2 (VGA/HDMI AUTO, I2S+DVI) | Pico 2 (RP2350) | `a4680a1828df` |
+| `MURMULATOR1_PICO2_HDMI_CUBZFIX_640x480.uf2` | Murmulator 1 (HDMI, I2S) | Pico 2 (RP2350) | `c90bfa661461` |
+| `MURMULATOR2_PICO2_HDMI_AUTO_CUBZFIX_640x480.uf2` | Murmulator 2 (VGA/HDMI AUTO, I2S+DVI) | Pico 2 (RP2350) | `eadfe6c391f6` |
 
 ## 1. Fișierele UF2 (VGA 640×480, sunet I2S)
 

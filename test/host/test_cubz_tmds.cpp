@@ -296,6 +296,117 @@ int main() {
     check("green symbols appear on the GREEN plane only (no R/G swap)", exclusive);
   }
 
+  // --- 4: CUBZFAST cross-check vs the generic palette path -------------------
+  //
+  // The dedicated fast encoder uses libdvi's fixed-parity convention
+  // (TMDS_FULLRES_NO_DC_BALANCE: even pixel stream always the negative
+  // variant, odd stream always the positive).  Word-level identity with the
+  // generic path is impossible by construction (its variant choice follows
+  // a content-dependent running accumulator), but the two variants of a
+  // symbol DECODE to the same byte - so the checks that matter are:
+  //   a) every fast symbol is a genuine palette variant (decodes to a
+  //      palette colour on its plane);
+  //   b) the DECODED pixel stream of the fast path is IDENTICAL to the
+  //      decoded pixel stream of the generic palette path, on all 3 planes,
+  //      for random patterns and both real timings (640x480: nw=320,
+  //      margin=32 words; 720x540: nw=360, margin=52 words);
+  //   c) the B/R planes and the green margins are the constant black word.
+  {
+    uint32_t fast_lut[ZX_CUBZ_TMDS_FAST_LUT_WORDS];
+    uint32_t plane_word;
+    zx_cubz_tmds_build_fast_lut(fast_lut, &plane_word, pal);
+    zx_cubz_tmds_fast_t fast = { fast_lut, plane_word };
+
+    // a) the LUT/constant words decode to exactly the palette entries used
+    bool cw = plane_word == ((pal[0] & 0x3ff) | ((pal[2] & 0x3ff) << 10));
+    check("fast plane word = blackNeg | blackPos<<10 from the palette", cw);
+    check("fast LUT byte 0 == the constant plane word",
+          fast_lut[0] == plane_word && fast_lut[1] == plane_word &&
+          fast_lut[2] == plane_word && fast_lut[3] == plane_word);
+
+    struct { uint32_t nw, margin, n_pix; } timings[2] = {
+      { 320, 32, 640 },   // 640x480x60 (M1-HDMI / M2-AUTO DVI_TIMING)
+      { 360, 52, 720 },   // 720x540x50 (other HDMI timing)
+    };
+    // Simple deterministic LCG for the random patterns.
+    uint32_t rng = 0x1234abcd;
+    bool dec_ok = true, margins_ok = true, ff_ok = true;
+    // Decode a 10-bit symbol to its palette colour on a channel section
+    // (4 words: c0 neg, c1 neg, c0 pos, c1 pos); -1 if not a palette symbol.
+    auto decode_sym = [&pal](uint32_t sec, uint32_t sym) -> int {
+      for (int j = 0; j < 4; ++j)
+        if ((pal[sec + j] & 0x3ff) == sym) return (j & 1);  // 0 black, 1 ink
+      return -1;
+    };
+    for (int tv = 0; tv < 2; ++tv) {
+      const uint32_t nw = timings[tv].nw;
+      const uint32_t margin = timings[tv].margin;
+      const uint32_t n_pix = timings[tv].n_pix;
+      const uint32_t margin_pix = margin >> 1;  // pixbuf-domain margin words
+      static uint32_t outA[3 * 360];
+      static uint32_t outB[3 * 360];
+      static uint32_t pixbuf2[360];
+      static uint8_t vram[0x4000];
+      static uint8_t line[ZX_CUBZ_TMDS_SCREEN_BYTES];
+      const int trials = 200;
+      for (int tr = 0; tr < trials + 2; ++tr) {
+        if (tr < trials) {
+          for (uint32_t i = 0; i < ZX_CUBZ_TMDS_SCREEN_BYTES; ++i) {
+            rng = rng * 1103515245u + 12345u;
+            line[i] = (uint8_t)(rng >> 16);
+          }
+        } else if (tr == trials) {
+          memset(line, 0x00, sizeof line);       // all-black edge
+        } else {
+          memset(line, 0xFF, sizeof line);       // all-green edge
+        }
+        // Path A: the generic palette path (expansion LUT + palette encode).
+        memset(vram, 0xAA, sizeof vram);
+        for (uint32_t c = 0; c < ZX_CUBZ_TMDS_SCREEN_BYTES; ++c)
+          vram[c << 8] = line[c];
+        memset(pixbuf2, 0, n_pix / 2 * sizeof(uint32_t));
+        zx_cubz_tmds_fill_line(pixbuf2, margin_pix, lut, vram);
+        tmds_encode_palette_data_1bpp(pal, (const uint8_t *)pixbuf2, n_pix, outA);
+        // Path B: the fast dedicated encoder (direct LUT).
+        zx_cubz_tmds_fill_line_fast(outB, nw, margin, &fast, vram);
+        // b) decoded streams must be identical on all 3 planes; a) every
+        // fast symbol must be a genuine palette variant.
+        for (uint32_t pi = 0; pi < 3 * (n_pix / 2); ++pi) {
+          const uint32_t sec = 4 * (pi / (n_pix / 2));  // B, G, R section
+          const int decA = decode_sym(sec, outA[pi] & 0x3ff);
+          const int decB = decode_sym(sec, outB[pi] & 0x3ff);
+          const int decA2 = decode_sym(sec, (outA[pi] >> 10) & 0x3ff);
+          const int decB2 = decode_sym(sec, (outB[pi] >> 10) & 0x3ff);
+          if (decB < 0 || decB2 < 0 || decA != decB || decA2 != decB2) {
+            if (dec_ok) {
+              printf("  DECODE MISMATCH tv=%d tr=%d word %u "
+                     "(A=%03x/%03x B=%03x/%03x dec %d/%d %d/%d)\n",
+                     tv, tr, pi, outA[pi] & 0x3ff, (outA[pi] >> 10) & 0x3ff,
+                     outB[pi] & 0x3ff, (outB[pi] >> 10) & 0x3ff,
+                     decA, decB, decA2, decB2);
+            }
+            dec_ok = false;
+          }
+        }
+      }
+      // c) B/R planes + green margins = the constant word; after the
+      // all-FF edge line the content must differ from it (ink drawn).
+      for (uint32_t i = 0; i < nw; ++i) {
+        margins_ok &= (outB[i] == plane_word) && (outB[2 * nw + i] == plane_word);
+      }
+      for (uint32_t i = 0; i < margin; ++i)
+        margins_ok &= (outB[nw + i] == plane_word);
+      for (uint32_t i = nw - margin; i < nw; ++i)
+        margins_ok &= (outB[nw + i] == plane_word);
+      ff_ok &= (outB[nw + margin] != plane_word) &&
+               (outB[nw + margin + 1] != plane_word);
+    }
+    check("FAST decoded pixels == palette-path pixels on 404 lines (both timings)", dec_ok);
+    check("FAST every symbol is a genuine palette variant", dec_ok);
+    check("FAST B/R planes + G margins are the constant black word", margins_ok);
+    check("FAST all-FF line differs from the black plane (green ink drawn)", ff_ok);
+  }
+
   printf(failures ? "FAILURES: %d\n" : "ALL PASS\n", failures);
   return failures ? 1 : 0;
 }

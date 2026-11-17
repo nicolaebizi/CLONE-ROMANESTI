@@ -558,11 +558,13 @@ You should not assume that anything in the docs folder is solely covered by the 
 | `MURMULATOR2_PICO2_HDMI_AUTO_CUBZFIX_640x480.uf2` | Murmulator 2 | Pico 2 (RP2350) | VGA/HDMI AUTO 640×480 | I2S+DVI |
 
 Variantele `CUBZFIX` (17 noiembrie 2026, SHA-256 primele 12 caractere:
-`e90bb4b42140` pe M1, respectiv `a4680a1828df` pe M2 AUTO) includ corecția CUB-Z
-pe HDMI: indexul paletei 1bpp se scria în bitul 2 al octetului de pixel, dar
-codorul libdvi îl citește din bitul 0, deci tot ecranul CUB-Z ieșea negru (cu
-dungi roșii = liniile întârziate ale libdvi). Planurile B/G/R din bufferul TMDS
-erau corecte; după corecție verdele cade pe canalul G.
+`c90bfa661461` pe M1, respectiv `eadfe6c391f6` pe M2 AUTO) includ corecția CUB-Z
+pe HDMI (verdele pe canalul G) PLUS encoderul dedicat rapid: codarea generică
+libdvi rula ~46 µs/linie, la limita termenului, iar activitatea pe disc (CP/M
+DIR) făcea libdvi să emite liniile-eroare roșii (flashuri roșii la DIR). Acum
+LUT dedicat de 4 KB + planuri B/R constant = ~10 µs/linie, termenul respectat
+cu marjă mare — flashurile roșii la operațiile de disc sunt rezolvate (de
+conferit pe placă). Detalii: `firmware/CITESTE-MA.md`, secțiunea 1a.
 
 Pentru încărcare: se ține apăsat **BOOTSEL**, se conectează Pico-ul prin USB și se copiază fișierul `.uf2`
 pe discul care apare (RPI-RP2 sau RP2350).
