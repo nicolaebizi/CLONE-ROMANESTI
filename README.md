@@ -554,6 +554,15 @@ You should not assume that anything in the docs folder is solely covered by the 
 | `MURMULATOR2_PICO2_VGA_I2S_640x480.uf2` | Murmulator 2 | Pico 2 (RP2350) | VGA 640×480 | I2S |
 | `MURMULATOR1_PICO1_ILI9341_I2S.uf2` | Murmulator 1 | Pico 1 (RP2040) | ILI9341 SPI | I2S |
 | `MURMULATOR1_PICO2_ILI9341_I2S.uf2` | Murmulator 1 | Pico 2 (RP2350) | ILI9341 SPI | I2S |
+| `MURMULATOR1_PICO2_HDMI_CUBZFIX_640x480.uf2` | Murmulator 1 | Pico 2 (RP2350) | HDMI 640×480 | I2S |
+| `MURMULATOR2_PICO2_HDMI_AUTO_CUBZFIX_640x480.uf2` | Murmulator 2 | Pico 2 (RP2350) | VGA/HDMI AUTO 640×480 | I2S+DVI |
+
+Variantele `CUBZFIX` (17 noiembrie 2026, SHA-256 primele 12 caractere:
+`e90bb4b42140` pe M1, respectiv `a4680a1828df` pe M2 AUTO) includ corecția CUB-Z
+pe HDMI: indexul paletei 1bpp se scria în bitul 2 al octetului de pixel, dar
+codorul libdvi îl citește din bitul 0, deci tot ecranul CUB-Z ieșea negru (cu
+dungi roșii = liniile întârziate ale libdvi). Planurile B/G/R din bufferul TMDS
+erau corecte; după corecție verdele cade pe canalul G.
 
 Pentru încărcare: se ține apăsat **BOOTSEL**, se conectează Pico-ul prin USB și se copiază fișierul `.uf2`
 pe discul care apare (RPI-RP2 sau RP2350).

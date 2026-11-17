@@ -234,6 +234,21 @@ void __not_in_flash_func(zx_prepare_hdmi_scanline_cobra80)(
 // pixels of a word (pixel doubling), so single-pixel patterns garbled.  It
 // also used 32-pixel margins, leaving the tail of the scanline buffer
 // unwritten on every line.
+//
+// The revision on top of that had the plane layout right - blue at word 0,
+// green at words_per_channel, red at 2 * words_per_channel, exactly the
+// three DMA planes libdvi serves (dvi_timing.c reads lane i from tmdsbuf +
+// i * h_active_pixels / DVI_SYMBOLS_PER_WORD; lane 0 is blue - TMDS_SYNC_LANE,
+// the "solid red scanline" error pattern is B/G 0x00 + R 0xfc - and the
+// proven zx encoders index attr_to_colour_chan_B/G/R for planes 0/1/2) - and
+// the palette24 argument order right (blue = bits 0-7, green = bits 8-15,
+// red = bits 16-23 of the 24-bit value, per tmds_setup_palette24_symbols).
+// What it got wrong was the pixbuf byte format: the palette loop's interp
+// lane 0 mask keeps its masked bits in place, so with palette_bits = 1 the
+// hardware extracts bit 0 of each pixbuf byte as the colour index, while the
+// LUT had put the index in bit 2 - every pixel read back as colour 0 and the
+// screen encoded all black (the "few red stripes" were libdvi's solid-red
+// late-scanline error lines, not a plane swap).
 void __not_in_flash_func(zx_prepare_hdmi_scanline_cubz)(
   struct dvi_inst *dvi,
   uint32_t y,
@@ -243,8 +258,10 @@ void __not_in_flash_func(zx_prepare_hdmi_scanline_cubz)(
   // 2-entry 24-bit palette translated to TMDS symbols: per channel 4 words
   // (colour 0 negative/positive disparity, colour 1 negative/positive).
   static uint32_t cubz_palette[12];
-  // VRAM byte -> 8 packed pixel bytes (2 words), palette index in bit 2,
-  // MSB = leftmost pixel (same bit order as the VGA encoder).
+  // VRAM byte -> 8 packed pixel bytes (2 words), palette index in bit 0
+  // (the LSB - what the palette loop's interp lane 0 mask extracts for
+  // palette_bits = 1), MSB = leftmost pixel (same bit order as the VGA
+  // encoder).
   static uint32_t cubz_lut[ZX_CUBZ_TMDS_LUT_WORDS];
   // One palette-index byte per pixel, word aligned.  The black margins are
   // set once and never touched.

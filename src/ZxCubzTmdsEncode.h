@@ -18,15 +18,23 @@
 // Expand one CUB-Z VRAM byte (8 pixels, MSB = leftmost, same bit order as the
 // VGA encoder) into the pixel format tmds_encode_palette_data reads with
 // palette_bits = 1: one byte per pixel carrying the 2-entry palette index in
-// bit 2 (index << 2).  Pixels fill the 32-bit words lowest byte first, so the
-// leftmost pixel of each VRAM byte also ends up at the lowest pixel position
-// of the line.
+// its LSB (bit 0).  The palette loop's interp lane 0 mask keeps its masked
+// bits in place over the word the body has already shifted (pixbuf word <<2
+// or >>14), so the LUT byte address contribution is (byte LSB) << 2 = 4 *
+// index bytes = word `index` inside the channel section of the palette
+// (tmds_setup_palette24_symbols writes colour i at word i, positive
+// disparity at word i + n_palette; lane 1 adds the running-disparity sign
+// shifted to bit (palette_bits + 2) = +8 bytes = +n_palette words).  With the
+// index in bit 2 instead, the hardware read bit 0 = 0 for every pixel and the
+// whole screen encoded as colour 0 (all black).  Pixels fill the 32-bit
+// words lowest byte first, so the leftmost pixel of each VRAM byte also ends
+// up at the lowest pixel position of the line.
 static inline void zx_cubz_tmds_build_lut(uint32_t *lut) {
   for (uint32_t b = 0; b < 256; ++b) {
     uint32_t w0 = 0, w1 = 0;
     for (uint32_t j = 0; j < 4; ++j) {
-      w0 |= ((b >> (7 - j)) & 1) << (j * 8 + 2);
-      w1 |= ((b >> (3 - j)) & 1) << (j * 8 + 2);
+      w0 |= ((b >> (7 - j)) & 1) << (j * 8);
+      w1 |= ((b >> (3 - j)) & 1) << (j * 8);
     }
     lut[b << 1] = w0;
     lut[(b << 1) + 1] = w1;
