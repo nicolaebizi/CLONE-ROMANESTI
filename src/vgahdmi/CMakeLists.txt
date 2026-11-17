@@ -148,6 +148,12 @@ set(zxspectrum_vgahdmi_auto_defines
   ZX_AUDIO_DVI_MIRROR
   # ---- Boot-time VGA/HDMI auto-detect ----
   ZX_VIDEO_AUTO_DETECT
+  # ---- CUB-Z renders on the VGA scanvideo path only (heap retreat):
+  # the DVI cubz encoder + its ~6.9 KB statics are compiled out of this
+  # dual-pipeline target; with a CUB-Z selected over HDMI it falls back
+  # to the generic DVI path (no picture - use the VGA display for the
+  # CUB-Z).  M1-HDMI and the other DVI targets keep ZX_CUBZ_DVI=ON. ----
+  ZX_CUBZ_DVI=0
 )
 
 target_compile_definitions(ZX-MURMULATOR2_VGA_HDMI_AUTO_640x480x60Hz PRIVATE

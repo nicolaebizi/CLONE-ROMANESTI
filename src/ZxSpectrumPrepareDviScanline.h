@@ -36,12 +36,16 @@ void __not_in_flash_func(zx_prepare_hdmi_scanline_cobra80)(
 // zx_prepare_scanvideo_scanline_cubz): 1bpp line from the 16K VRAM bank 2
 // (_RAM[4]), row-remapped with the shared cubz_lines[] table, scrolled by the
 // $F2 SCROLL latch, bright green on black.
+// Gated by ZX_CUBZ_DVI (default ON; compiled out of the M2-AUTO target -
+// heap retreat, the CUB-Z renders on VGA there).
+#if !defined(ZX_CUBZ_DVI) || ZX_CUBZ_DVI
 void __not_in_flash_func(zx_prepare_hdmi_scanline_cubz)(
   struct dvi_inst *dvi,
   uint32_t y,
   uint8_t* vram,
   uint8_t scroll
 );
+#endif
 
 #ifdef __cplusplus
 }

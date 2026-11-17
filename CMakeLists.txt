@@ -61,6 +61,18 @@ if(ZX_CZDIAG)
   add_compile_definitions(ZX_CZDIAG=1)
 endif()
 
+# CUB-Z DVI/HDMI display path: ON by default (M1-HDMI and every other DVI
+# target keep the CUB-Z over HDMI).  The M2-AUTO target (the VGA+DVI dual
+# pipeline, the tightest heap) overrides it to OFF in
+# src/vgahdmi/CMakeLists.txt: the ~6.9 KB of cubz DVI statics collapsed
+# that build's heap and the VGA stopped starting at all - on the AUTO the
+# CUB-Z renders on the VGA scanvideo path only (proven since day one);
+# with a CUB-Z selected over HDMI it shows no picture, by design.
+option(ZX_CUBZ_DVI "Compile the CUB-Z DVI/HDMI display path" ON)
+if(NOT ZX_CUBZ_DVI)
+  add_compile_definitions(ZX_CUBZ_DVI=0)
+endif()
+
 add_compile_options(-Wall)
 
 add_compile_definitions(HID_PROTOCOL_DEFAULT=HID_PROTOCOL_REPORT)

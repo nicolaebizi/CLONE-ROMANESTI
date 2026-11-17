@@ -120,6 +120,12 @@ void __not_in_flash_func(ZxDviRenderLoop)(
         );
         y++;
       }
+// CUB-Z on the DVI/HDMI path is gated by ZX_CUBZ_DVI (default ON; the
+// M2-AUTO dual-pipeline target compiles it out - see src/vgahdmi/
+// CMakeLists.txt): with the gate OFF a CUB-Z selected over HDMI falls
+// through to the generic branch (no picture by design - the CUB-Z
+// renders on the VGA scanvideo path there).
+#if !defined(ZX_CUBZ_DVI) || ZX_CUBZ_DVI
       else if (zxSpectrum.cubz()) {
         // ICE Felix CUB-Z: 512x256 1bpp VRAM in _RAM[4], row remap +
         // SCROLL latch, bright green phosphor on the DVI/HDMI path.
@@ -134,6 +140,7 @@ void __not_in_flash_func(ZxDviRenderLoop)(
         );
         y++;
       }
+#endif
       else {
         zx_prepare_hdmi_scanline(
           &dvi0, 

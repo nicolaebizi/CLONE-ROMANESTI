@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 fruit-bat
 #include "ZxSpectrumPrepareDviScanline.h"
+// CUB-Z DVI encoder machinery is gated by ZX_CUBZ_DVI (default ON; compiled
+// out of the M2-AUTO dual-pipeline target - heap retreat, the CUB-Z renders
+// on the VGA scanvideo path there).
+#if !defined(ZX_CUBZ_DVI) || ZX_CUBZ_DVI
 #include "ZxCubzTmdsEncode.h"
+#endif
 #include "ZxCzDiag.h"
 #include <string.h>
 
@@ -213,6 +218,7 @@ void __not_in_flash_func(zx_prepare_hdmi_scanline_cobra80)(
   queue_add_blocking(&dvi->q_tmds_valid, &tmdsbuf);
 }
 
+#if !defined(ZX_CUBZ_DVI) || ZX_CUBZ_DVI
 // ICE Felix CUB-Z VDT-52S: 512x256 green phosphor raster drawn 1:1 (one CUB-Z
 // pixel per output pixel), row-remapped with the shared cubz_lines[] table and
 // scrolled by the $F2 SCROLL latch.  TMDS twin of
@@ -373,3 +379,4 @@ void __not_in_flash_func(zx_prepare_hdmi_scanline_cubz)(
 
   queue_add_blocking(&dvi->q_tmds_valid, &tmdsbuf);
 }
+#endif // !defined(ZX_CUBZ_DVI) || ZX_CUBZ_DVI

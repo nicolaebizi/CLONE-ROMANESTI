@@ -1,5 +1,11 @@
 # CUBZFAST M1 + M2-AUTO — CUB-Z HDMI fast dedicated encoder (PERFORMANCE)
 
+> **RETRAS (17 nov 2026):** `MURMULATOR2_PICO2_HDMI_AUTO_CUBZFAST_640x480.uf2` a fost
+> scos din staging — static-ele CUB-Z DVI au prăbușit heap-ul build-ului dual M2-AUTO și
+> VGA-ul nu mai pornea deloc. Înlocuit de build-ul de retragere
+> `ZX-MURMULATOR2_VGA_HDMI_AUTO_640x480x60Hz_SUPERSPEC_P2.uf2` (CUB-Z DOAR PE VGA,
+> BSS 449,520) — vezi `README_CUBZ_RETREAT_M2_AUTO.md`. M1 CUBZFAST rămâne valid.
+
 **Files:**
 - `MURMULATOR1_PICO2_HDMI_CUBZFAST_640x480.uf2` — Murmulator 1 (Pico 2, RP2350), HDMI 640×480×60, I2S
   SHA-256 (12): `c90bfa661461` · full: `c90bfa66146167bc4a65a7a147862d142ed0ffa2eeb8e8a11d6c3f4aad13f2fe`
