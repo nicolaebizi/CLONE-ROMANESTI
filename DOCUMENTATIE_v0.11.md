@@ -1,6 +1,6 @@
 # DOCUMENTAȚIE v0.11-superspec
 
-**RELEASE:** v0.11-superspec @ `67e84e29a` (incl. fix CUB-Z pe HDMI)
+**RELEASE:** v0.11-superspec @ `65cdd39bc` (incl. fix CUB-Z pe HDMI, versiunea FINALĂ)
 **PLATĂ:** Murmulator 1 / Murmulator 2, RP2350 (Pico 2), drag&drop UF2 prin BOOTSEL
 **DATA:** 16 noiembrie 2026
 
@@ -39,10 +39,10 @@ Noutatea mare a v0.11: **SuperSpec #11** (al 11-lea calcul din seria lui Roelof 
 |---|---|---|---|---|
 | 1 | Murmulator 1 (M1) | VGA 640x480x60 + I2S | `_M1_P2` | **TESTAT pe hardware** |
 | 2 | Murmulator 2 (M2) | VGA 640x480x60 + I2S | `_P2` (M2 VGA) | **TESTAT pe hardware** |
-| 3 | Murmulator 2 (M2) | AUTO VGA/HDMI (detectare la boot) | `_P2` (AUTO) | TESTAT pe VGA; **calea HDMI = build CUB-Z reparat, validare hardware în curs** |
+| 3 | Murmulator 2 (M2) | AUTO VGA/HDMI (detectare la boot) | `_P2` (AUTO) | TESTAT pe VGA; **calea HDMI = build CUB-Z FINAL, validare hardware în curs** |
 | 4 | Murmulator 1 (M1) | TFT ILI9341 320x240 + I2S + PS/2 | `ZxSpectrumMurmulatorTftIli9341I2sPs2_..._M1_P2` | **TESTAT pe hardware** (16 nov 2026) |
 | 5 | Murmulator 2 (M2) | TFT ILI9341 320x240 + I2S + PS/2 | `ZxSpectrumMurmulator2TftIli9341I2sPs2_..._M2_P2` | build-verified; testare pe hardware în curs |
-| 6 | Murmulator 1 (M1) | HDMI FIX 640x480x60 (pimoroni) + I2S | `_M1_P2` (HDMI) | build CUB-Z reparat, build-verified; **validare hardware în curs** |
+| 6 | Murmulator 1 (M1) | HDMI FIX 640x480x60 (pimoroni) + I2S | `_M1_P2` (HDMI) | build CUB-Z FINAL, build-verified; **validare hardware în curs** |
 
 Notă: NU există variantă M1-AUTO (detectarea VGA/HDMI la boot e doar pe MURMULATOR2, wiring GPIO12-19).
 
@@ -51,7 +51,7 @@ Notă: NU există variantă M1-AUTO (detectarea VGA/HDMI la boot e doar pe MURMU
 - **Ecran negru la prima accesare CF = AȘTEAPTĂ.** Nu e blocat — e creația imaginii de 3.67 GB (1–3 minute, doar prima dată). Dacă faci reset în mijlocul creației, relucrează de la început.
 - **Cardul nu are ~4 GB liberi = CF-ul nu merge.** Eliberează spațiu sau schimbă cardul.
 - **Debug CF:** rândul „CF: LBA..." nu mai apare în meniu (default OFF). Pentru depanare, recompilează cu `ZX_CF_DIAG=ON`.
-- **CUB-Z pe HDMI (M1-HDMI și M2-AUTO): REPARAT în v0.11** — pe versiunile vechi imaginea era garbage/blank. **Reflash obligatoriu** cu build-urile din acest release (SHA-256: `918ae6666cfe...` M1-HDMI, `4c55d742afa6...` M2-AUTO).
+- **CUB-Z pe HDMI (M1-HDMI și M2-AUTO): REPARAT în v0.11, VERSIUNEA FINALĂ** — pe versiunile vechi imaginea era garbage/blank. Fix-ul final în 3 pași: ① ramura CUB-Z lipsea din bucla DVI/HDMI (67e84e29a) → ② reencodare 1bpp full-res cu paleta reală verde/negru (a80cc7b0b) → ③ indexul paletei 1bpp mutat din bitul 2 în **bitul 0** + planurile B/G/R corecte (verdele cădea pe canalul R) (65cdd39bc). **REFLASH OBLIGATORIU pentru CUB-Z** cu build-urile din acest release (SHA-256: `e90bb4b42140...` M1-HDMI, `a4680a1828df...` M2-AUTO) — pe SHA-urile vechi (`918ae6666cfe...` / `4c55d742afa6...`) CUB-Z iese negru cu dungi roșii!
 - După schimbarea imaginii CF, comutarea se face cu RESET (meniul Reset → E).
 
 ## CREDITE
