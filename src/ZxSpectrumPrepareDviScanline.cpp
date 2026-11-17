@@ -2,6 +2,7 @@
 // Copyright (c) 2026 fruit-bat
 #include "ZxSpectrumPrepareDviScanline.h"
 #include "ZxCubzTmdsEncode.h"
+#include "ZxCzDiag.h"
 #include <string.h>
 
 extern "C" {
@@ -275,6 +276,9 @@ void __not_in_flash_func(zx_prepare_hdmi_scanline_cubz)(
     // zxd_colour_words[0].
     const uint32_t palette24[2] = { 0x000000, 0x00ff00 };
     tmds_setup_palette24_symbols(palette24, cubz_palette, 2);
+#ifdef ZX_CZDIAG
+    zxCzDiagSetupDone(); // CZD diag (c): the palette setup really ran
+#endif
     zx_cubz_tmds_build_lut(cubz_lut);
     memset(cubz_linepix, 0, sizeof(cubz_linepix));
     cubz_margin_words =
@@ -286,6 +290,11 @@ void __not_in_flash_func(zx_prepare_hdmi_scanline_cubz)(
 
   uint32_t *tmdsbuf;
   queue_remove_blocking(&dvi->q_tmds_free, &tmdsbuf);
+#ifdef ZX_CZDIAG
+  // CZD diag (e): the plane offsets actually used - B plane write base
+  // (tmdsbuf) and G plane offset (h_active/2 words) both mod 4.
+  zxCzDiagPixbuf(tmdsbuf, dvi->timing->h_active_pixels);
+#endif
   const uint8_t *s = vram + ((cubz_lines[y < 240 ? y : 239] + scroll) & 255);
 
   // Refill only the 512 screen pixels (64 VRAM bytes, byte-per-8-px stride,

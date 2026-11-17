@@ -21,6 +21,8 @@
 #endif
 #include "PicoCoreVoltage.h"
 #include "CobraDiskFile.h"
+
+#include "ZxCzDiag.h"
 #if PICO_RP2350
 #include "BootSwap.h"
 #endif
@@ -1757,6 +1759,22 @@ _audioOutOptions.addOption(_audioHdmiOp.addQuickKey(getQuickKey(audioOutQuickKey
         else {
           builtForRow(pen);
         }
+#endif
+      }
+      // CZD diag row 1 (ZX_CZDIAG, default OFF): live evidence from the
+      // DVI render loop's cubz branch - branch calls in the last second,
+      // h_active_pixels as the code sees it, palette-setup flag, the
+      // cubz() predicate and the pixbuf plane offsets mod 4.  DEBUG build
+      // only for the CUB-Z M1-P2 HDMI black-screen fault.
+      else if (_zxSpectrum->type() == ZxSpectrumCubz) {
+#ifdef ZX_CZDIAG
+        const ZxCzDiag *cz = zxCzDiag();
+        pen->printAtF(0, 1, false, "CZD: H%lu %u S%u C%u O%u%u",
+          (unsigned long)cz->hz, (unsigned)cz->hActive,
+          (unsigned)cz->setup, (unsigned)cz->cubz,
+          (unsigned)cz->ob, (unsigned)cz->og);
+#else
+        builtForRow(pen);
 #endif
       }
       else {

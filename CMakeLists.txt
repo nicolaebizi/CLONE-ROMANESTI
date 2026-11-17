@@ -52,6 +52,15 @@ if(ZX_CF_DIAG)
   add_compile_definitions(ZX_CF_DIAG=1)
 endif()
 
+# CUB-Z HDMI diag row ("CZD: H..") in the menu: default OFF, entirely
+# compiled out (struct, counters, row) unless the build passes
+# -DZX_CZDIAG=ON.  DEBUG build only: evidence from the DVI render loop's
+# cubz branch for the CUB-Z M1-P2 HDMI black-screen fault.
+option(ZX_CZDIAG "Show the CUB-Z DVI diag line in the menu (debug)" OFF)
+if(ZX_CZDIAG)
+  add_compile_definitions(ZX_CZDIAG=1)
+endif()
+
 add_compile_options(-Wall)
 
 add_compile_definitions(HID_PROTOCOL_DEFAULT=HID_PROTOCOL_REPORT)

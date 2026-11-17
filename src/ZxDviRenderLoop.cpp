@@ -2,6 +2,7 @@
 // Copyright (c) 2026 fruit-bat
 #include "ZxDviRenderLoop.h"
 #include "ZxSpectrumPrepareDviScanline.h"
+#include "ZxCzDiag.h"
 #include "hardware/clocks.h"
 #include "PicoCharRenderer.h"
 
@@ -97,6 +98,11 @@ void __not_in_flash_func(ZxDviRenderLoop)(
         screenPtr = zxSpectrum.memPtr(y & 4 ? 7 : 5);
         attrPtr = screenPtr + (32 * 24 * 8);
       }
+#ifdef ZX_CZDIAG
+      // CZD diag: sample the cubz() predicate and h_active on EVERY line,
+      // branch taken or not (d + b below).
+      zxCzDiagLine(zxSpectrum.cubz(), dvi0.timing->h_active_pixels);
+#endif
   
       if (showMenu) {
         uint rs = pcw_prepare_scanline_80(&dvi0, y++, ys, frames);
@@ -117,6 +123,9 @@ void __not_in_flash_func(ZxDviRenderLoop)(
       else if (zxSpectrum.cubz()) {
         // ICE Felix CUB-Z: 512x256 1bpp VRAM in _RAM[4], row remap +
         // SCROLL latch, bright green phosphor on the DVI/HDMI path.
+#ifdef ZX_CZDIAG
+        zxCzDiagHit(); // CZD diag (a): the cubz branch was actually taken
+#endif
         zx_prepare_hdmi_scanline_cubz(
           &dvi0,
           y,
@@ -149,6 +158,9 @@ void __not_in_flash_func(ZxDviRenderLoop)(
           }
         }
        frames++;
+#ifdef ZX_CZDIAG
+        zxCzDiagFrameEnd(); // CZD diag (a): second latch on the frame wrap
+#endif
         if (!ringoMode) {
           screenPtr = zxSpectrum.screenPtr();
           attrPtr = screenPtr + (32 * 24 * 8);
